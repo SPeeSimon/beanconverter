@@ -1,59 +1,63 @@
 package org.spee.commons.convert.generator;
 
 
-import static org.objectweb.asm.ClassWriter.COMPUTE_MAXS;
-import static org.objectweb.asm.Opcodes.ACC_PRIVATE;
-import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
-import static org.objectweb.asm.Opcodes.ACC_SUPER;
-import static org.objectweb.asm.Opcodes.ALOAD;
-import static org.objectweb.asm.Opcodes.ASTORE;
-import static org.objectweb.asm.Opcodes.CHECKCAST;
-import static org.objectweb.asm.Opcodes.DUP;
-import static org.objectweb.asm.Opcodes.GETFIELD;
-import static org.objectweb.asm.Opcodes.H_INVOKESTATIC;
-import static org.objectweb.asm.Opcodes.INVOKESPECIAL;
-import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
-import static org.objectweb.asm.Opcodes.IRETURN;
-import static org.objectweb.asm.Opcodes.NEW;
-import static org.objectweb.asm.Opcodes.PUTFIELD;
-import static org.objectweb.asm.Opcodes.RETURN;
-import static org.objectweb.asm.Opcodes.V1_7;
-import static org.objectweb.asm.Type.VOID_TYPE;
-import static org.objectweb.asm.Type.getInternalName;
-import static org.objectweb.asm.Type.getMethodDescriptor;
-import static org.objectweb.asm.Type.getType;
+import static net.bytebuddy.description.type.TypeDescription.Generic.Builder.parameterizedType;
+import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
+import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 import static org.spee.commons.convert.generator.ClassGeneratorHelper.filterOnlyCustomConverters;
-import static org.spee.commons.convert.generator.ClassGeneratorHelper.nullCheckWithReturn;
 
-import java.io.File;
 import java.io.IOException;
-import java.lang.invoke.CallSite;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.util.Collection;
+import java.lang.reflect.Type;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Handle;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Type;
-import org.objectweb.asm.signature.SignatureVisitor;
-import org.objectweb.asm.signature.SignatureWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.spee.commons.convert.Convert;
 import org.spee.commons.convert.generator.ClassMap.MappedProperties;
-import org.spee.commons.convert.generator.GeneratorFactory.Context.ConverterField;
-import org.spee.commons.convert.internals.IterableMappingLocator;
 import org.spee.commons.convert.internals.MappingLocator;
 
-import com.google.common.base.Function;
+import com.google.common.base.Converter;
 import com.google.common.collect.Iterables;
-import com.google.common.io.Files;
-import com.google.common.primitives.Primitives;
+
+import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.NamingStrategy;
+import net.bytebuddy.description.field.FieldDescription;
+import net.bytebuddy.description.field.FieldDescription.Latent;
+import net.bytebuddy.description.field.FieldDescription.Token;
+import net.bytebuddy.description.method.MethodDescription;
+import net.bytebuddy.description.method.ParameterDescription;
+import net.bytebuddy.description.modifier.Visibility;
+import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.description.type.TypeDescription.Generic;
+import net.bytebuddy.dynamic.DynamicType.Builder;
+import net.bytebuddy.dynamic.DynamicType.Loaded;
+import net.bytebuddy.dynamic.scaffold.InstrumentedType;
+import net.bytebuddy.dynamic.scaffold.subclass.ConstructorStrategy;
+import net.bytebuddy.implementation.Implementation;
+import net.bytebuddy.implementation.SuperMethodCall;
+import net.bytebuddy.implementation.bytecode.ByteCodeAppender;
+import net.bytebuddy.implementation.bytecode.StackManipulation;
+import net.bytebuddy.implementation.bytecode.assign.TypeCasting;
+import net.bytebuddy.implementation.bytecode.constant.TextConstant;
+import net.bytebuddy.implementation.bytecode.member.FieldAccess;
+import net.bytebuddy.implementation.bytecode.member.MethodInvocation;
+import net.bytebuddy.implementation.bytecode.member.MethodInvocation.WithImplicitInvocationTargetType;
+import net.bytebuddy.implementation.bytecode.member.MethodReturn;
+import net.bytebuddy.implementation.bytecode.member.MethodVariableAccess;
+import net.bytebuddy.jar.asm.MethodVisitor;
+import net.bytebuddy.jar.asm.Opcodes;
+import net.bytebuddy.matcher.ElementMatchers;
+import net.bytebuddy.utility.RandomString;
 
 /**
  * Generating the converter. It looks like:
@@ -92,39 +96,14 @@ public class gen_Source_TypetoTargetTypeConverter extends Object {
  */
 public class GeneratorFactory {
 	private static final String INIT_CUSTOM_CONVERTERS_METHOD = "initCustomConverters";
-	private static final String CONSTRUCTOR_INIT = "<init>";
 	private static final String CONVERTER_FIELDNAME_PREFIX = "converter_";
-	private static final String VOIDMETHOD = getMethodDescriptor(VOID_TYPE); // ()V
-	private static final Type converterType = getType(com.google.common.base.Converter.class);
-	private static final Type objectType = getType(Object.class);
-	/**
-	 * In instance methods (so non-static), the index for <code>this</code> is 0.
-	 */
-	private static final int REFINSTANCE_THIS = 0;
-	/**
-	 * In instance methods, the index for the first argument is 1.
-	 */
-	private static final int REFINSTANCE_ARGUMENT_1 = 1;
-	/**
-	 * In instance methods, the index for the second argument is 2.
-	 */
-	private static final int REFINSTANCE_ARGUMENT_2 = 2;
+	private static final String CONVERT_METHODNAME = "convert";
 
-	private final Logger logger = LoggerFactory.getLogger(GeneratorFactory.class);
-	/**
-	 * Bootstrap method for invokedynamic converters
-	 */
-	private final Handle converterBootstrapMethod;
-
-	private final Handle listBootstrapMethod;
-	/**
-	 * Bootstrap method for invokedynamic creating new instances
-	 */
-	private final Handle newinstanceBootstrapMethod;
+	private static final Logger LOG = LoggerFactory.getLogger(GeneratorFactory.class);
 	/**
 	 * Parent class for generated converters
 	 */
-	private final Class<?> parentClass = Object.class;
+	private static final Class<Convert> parentClass = Convert.class;
 
 	
 	static class Context {
@@ -132,39 +111,31 @@ public class GeneratorFactory {
 		String internalClassName;
 		Type sourceType;
 		Type targetType;
-		ClassMap classMap;
+		ClassMap classMap = new ClassMap(null, null);
 		Map<Class<?>, ConverterField> customConverters = new LinkedHashMap<>();
 		
 		static class ConverterField {
 			String fieldName;
-			String signature;
+			net.bytebuddy.description.field.FieldDescription.Token field;
+			
+			public ConverterField(String fieldName, Token field) {
+				super();
+				this.fieldName = fieldName;
+				this.field = field;
+			}
 		}
 	}
 	
 
 	public GeneratorFactory() {
 		// invoke dynamic BootstrapMethod (BSM) for converters and constructors
-		final String mappingLocatorClassName = getInternalName(MappingLocator.class);
-		final String mappingLocatorBSMName = "bootstrap";
-		final String mappingLocatorBSMType = MethodType.methodType(CallSite.class, MethodHandles.Lookup.class, String.class, MethodType.class, String.class).toMethodDescriptorString();
-		converterBootstrapMethod = new Handle(H_INVOKESTATIC, mappingLocatorClassName, mappingLocatorBSMName, mappingLocatorBSMType, false);
-		
-		final String beanCreationStrategyClassName = getInternalName(BeanCreationStrategy.class);
-		final String beanCreationStrategyBSMName = "bootstrap";
-		final String beanCreationStrategyBSMType = MethodType.methodType(CallSite.class, MethodHandles.Lookup.class, String.class, MethodType.class).toMethodDescriptorString();
-		newinstanceBootstrapMethod = new Handle(H_INVOKESTATIC, beanCreationStrategyClassName, beanCreationStrategyBSMName, beanCreationStrategyBSMType, false);
-		
-		final String iterableMappingLocatorClassName = getInternalName(IterableMappingLocator.class);
-		final String iterableMappingLocatorBSMName = "bootstrap";
-		final String iterableMappingLocatorBSMType = MethodType.methodType(CallSite.class, MethodHandles.Lookup.class, String.class, MethodType.class).toMethodDescriptorString();
-		listBootstrapMethod = new Handle(H_INVOKESTATIC, iterableMappingLocatorClassName, iterableMappingLocatorBSMName, iterableMappingLocatorBSMType, false);
 	}
 
 	
 	public Class<?> build(ClassMap classMap){
 		Context context = new Context();
-		context.sourceType = getType(classMap.getSource().getBeanDescriptor().getBeanClass());
-		context.targetType = getType(classMap.getTarget().getBeanDescriptor().getBeanClass());
+		context.sourceType = (classMap.getSource().getBeanDescriptor().getBeanClass());
+		context.targetType = (classMap.getTarget().getBeanDescriptor().getBeanClass());
 		context.classMap = classMap;
 
 		return build(context);
@@ -173,50 +144,77 @@ public class GeneratorFactory {
 	
 	public Class<?> build(Class<?> sourceClass, Class<?> targetClass){
 		Context context = new Context();
-		context.sourceType = getType(sourceClass);
-		context.targetType = getType(targetClass);
+		context.sourceType = (sourceClass);
+		context.targetType = (targetClass);
 		context.classMap = ClassMapBuilder.build(sourceClass, targetClass).useDefaults().generate();
 		
 		return build(context);
 	}
 	
+	private static Builder<Convert<?, ?>> generateClassDefinition(Context context){
+		@SuppressWarnings("unchecked")
+		Builder<Convert<?,?>> builder = (Builder<Convert<?,?>>)
+				new ByteBuddy()
+				.with(new NamingStrategy.AbstractBase() {
+					@Override
+					public String subclass(Generic superClass) {
+						String src = superClass.getTypeArguments().get(0).getTypeName() + " to " + superClass.getTypeArguments().get(1).getTypeName();
+						return "generated.converters.gen_" + new String(Base64.getEncoder().encode(src.getBytes())).replace("=", "");
+					}
+					@Override
+					protected String name(TypeDescription superClass) {
+						return "generated.converters_gen_Source_TypetoTargetTypeConverter" + RandomString.make(10);
+					}
+				})
+				.subclass(parameterizedType(parentClass, context.sourceType, context.targetType).build(), ConstructorStrategy.Default.NO_CONSTRUCTORS)
+				.defineMethod("toString", String.class, Visibility.PUBLIC)
+					.intercept(new Implementation.Simple(new TextConstant(String.format("converter %s to %s", context.sourceType, context.targetType)), MethodReturn.REFERENCE));
+		return builder;
+	}
 	
-	private Class<?> build(Context context){
-		prepareContext(context);
+	
+	private static Class<Convert<?,?>> build(Context context) {
+		Builder<Convert<?,?>> builder = generateClassDefinition(context);
+		builder = builder.defineConstructor(Visibility.PUBLIC).intercept(SuperMethodCall.INSTANCE.andThen(new ConstructorBuilder()));
+		builder = generateInitCustomConverters(context, builder);
+		builder = generate2ArgsConvertMethod(context, builder);
+		builder = generateConvertMethod(builder);
 		
-		ClassWriter cw = new ClassWriter(COMPUTE_MAXS);
-		
-		generateClassDefinition(cw, context);
-		generateConstructor(cw, parentClass, context);
-		generateInitCustomConverters(cw, context);
-		generate2ArgsConvertMethod(cw, context);
-		generateConvertMethod(cw, context);
-		cw.visitEnd();
-
-		saveClass(cw, context); // TODO save .class file
-		Class<?> generatedClass = loadClass(cw, context); // TODO load class
-		// TODO return MethodHandle
-		return generatedClass;
+		Loaded<Convert<?,?>> loaded = builder.make().load(GeneratorFactory.class.getClassLoader());
+		try {
+			java.nio.file.Files.write(Paths.get("target/convertAtoB.class"), loaded.getBytes());
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		Class<Convert<?,?>> dynamicType = (Class<Convert<?,?>>) loaded.getLoaded();
+		return dynamicType;
 	}
 
 
 	/**
-	 * Generate a classname and fieldnames for the custom converters.
+	 * Generate the method <code>public void convert(source, target)</code>
 	 * @param context
+	 * @param builder
+	 * @return
 	 */
-	private void prepareContext(Context context) {
-		final String className = "gen_" + context.sourceType.getInternalName().replace('.', '_').replace('/', '_') + "to" + 
-									context.targetType.getInternalName().replace('.', '_').replace('/', '_') + "Converter";
-		context.className = "generated.converters." + className;
-		context.internalClassName = context.className.replace('.', '/');
+	private static Builder<Convert<?, ?>> generate2ArgsConvertMethod(Context context, Builder<Convert<?, ?>> builder) {
+		builder = builder.defineMethod(CONVERT_METHODNAME, Void.TYPE, Visibility.PUBLIC)
+			.withParameter(context.sourceType)
+			.withParameter(context.targetType)
+			.intercept( new Implementation.Compound(new ClassGeneratorHelper.NullcheckAndReturnBuilder(false), new Converter2Builder(context)) );
+		return builder;
+	}
 
-		int converterIndex = 0;
-		for (MappedProperties mappedProperties : Iterables.filter(context.classMap.getMappedProperties(), filterOnlyCustomConverters())) {
-			ConverterField converterField = new ConverterField();
-			converterField.fieldName = CONVERTER_FIELDNAME_PREFIX + (converterIndex++);
-			converterField.signature = createFieldSignature(mappedProperties);
-			context.customConverters.put(mappedProperties.customConverter, converterField);
-		}
+
+	/**
+	 * Generate the method <code>public target convert(source)</code>
+	 * @param builder
+	 * @return
+	 */
+	private static Builder<Convert<?, ?>> generateConvertMethod(Builder<Convert<?, ?>> builder) {
+		builder = builder.method( isDeclaredBy(parentClass).and(named(CONVERT_METHODNAME)) )
+				.intercept(new Implementation.Compound(new ClassGeneratorHelper.NullcheckAndReturnBuilder(), new Converter1Builder()));
+		return builder;
 	}
 
 
@@ -229,160 +227,41 @@ public class GeneratorFactory {
 	 * @param mappedProperties
 	 * @return
 	 */
-	private String createFieldSignature(MappedProperties mappedProperties) {
-		SignatureWriter signature = new SignatureWriter();
-		signature.visitClassType(converterType.getInternalName());
-		signature.visitTypeArgument(SignatureVisitor.INSTANCEOF);
-		signature.visitClassType(getInternalName(mappedProperties.sourceProperty.getReadMethod().getReturnType()));
-		signature.visitEnd();
-		signature.visitTypeArgument(SignatureVisitor.INSTANCEOF);
-		signature.visitClassType(getInternalName(Primitives.wrap(mappedProperties.targetProperty.getWriteMethod().getParameterTypes()[0])));
-		signature.visitEnd();
-		signature.visitEnd();
-		return signature.toString();
-	}
-	
-	/**
-	 * 
-	 * @param returnType
-	 * @param parameterType
-	 * @return
-	 */
-	private String createMethodDescriptor(java.lang.reflect.Type returnType, java.lang.reflect.Type parameterType){
-//		()V
-//		(Ljava/util/Map;)Ljava/util/List;
-//		(Ljava/util/Map<Ljava/lang/String;Lorg/spee/commons/beans/convert/Address;>;)Ljava/util/List<Lorg/spee/commons/beans/convert/Address;>;
+	static class FieldInitializer implements Implementation {
+		private FieldDescription.Token field;
+		private Class<?> customConverter;
+		private WithImplicitInvocationTargetType invokeDynamic;
 		
-		SignatureWriter signature = new SignatureWriter();
-		signature.visitParameterType(); // (
-		
-		if( parameterType instanceof ParameterizedType ){
-			ParameterizedType classTypes = (ParameterizedType)parameterType;
-			
-			signature.visitClassType(Type.getInternalName((Class<?>)classTypes.getRawType()));
-			
-			for (java.lang.reflect.Type type : classTypes.getActualTypeArguments()) {
-				signature.visitTypeArgument(SignatureVisitor.INSTANCEOF);
-				signature.visitClassType(getInternalName((Class<?>)type));
-				signature.visitEnd();
+		public FieldInitializer(FieldDescription.Token field, Class<?> customConverter) {
+			super();
+			this.field = field;
+			this.customConverter = customConverter;
+			try {
+				invokeDynamic = MethodInvocation.invoke( new MethodDescription.ForLoadedMethod( BeanCreationStrategy.class.getDeclaredMethod("bootstrap", MethodHandles.Lookup.class, String.class, MethodType.class) ) );
+			} catch (NoSuchMethodException | SecurityException e) {
+				throw new RuntimeException(e);
 			}
-			signature.visitEnd();
-		}else if (parameterType != null){
-			signature.visitClassType(getInternalName((Class<?>)parameterType)); // Ljava/lang/String			
-			signature.visitEnd();
 		}
 
-		signature.visitReturnType();
+		@Override
+		public InstrumentedType prepare(InstrumentedType instrumentedType) {
+			return instrumentedType;
+		}
+
+		@Override
+		public ByteCodeAppender appender(Target implementationTarget) {
+			// converter_? = newInstance(customconverter?.class);
+			return new Implementation.Simple(
+					MethodVariableAccess.loadThis(),
+					invokeDynamic.dynamic("newInstance", new TypeDescription.ForLoadedType(customConverter), Collections.<TypeDescription>emptyList(), Collections.emptyList()),
+					TypeCasting.to(field.getType()),
+					FieldAccess.forField( new Latent(implementationTarget.getInstrumentedType(), field) ).write()
+			).appender(implementationTarget);
+		}
 		
-		if( returnType instanceof ParameterizedType ){
-			ParameterizedType classTypes = (ParameterizedType)returnType;
-			
-			signature.visitClassType(getInternalName((Class<?>)classTypes.getRawType()));
-			
-			for (java.lang.reflect.Type type : classTypes.getActualTypeArguments()) {
-				signature.visitTypeArgument(SignatureVisitor.INSTANCEOF);
-				signature.visitClassType(getInternalName((Class<?>)type));
-				signature.visitEnd();
-			}
-			signature.visitEnd();
-
-		}else if( returnType == null ){
-			signature.visitBaseType('V'); // Type.VOID_TYPE
-		}else{
-			signature.visitClassType(getType((Class<?>)returnType).getInternalName());
-			signature.visitEnd();
-		}
-
-		return signature.toString();
 	}
 	
 
-	/**
-	 * Generate the class definition
-	 * <pre>public class internalClassName extends parentClass {}</pre>
-	 * @param cw
-	 * @param context
-	 */
-	private void generateClassDefinition(ClassWriter cw, Context context) {
-		String signature = null;
-		String[] implementedInterfaces = null; // new String[]{Type.getInternalName(Converter.class)}
-		cw.visit(V1_7, ACC_PUBLIC + ACC_SUPER, context.internalClassName, signature, getInternalName(parentClass), implementedInterfaces);
-	}
-	
-
-	/**
-	 * Write the class to file.
-	 * @param cw
-	 * @param context
-	 */
-	private void saveClass(ClassWriter cw, Context context){
-		byte[] byteClass = cw.toByteArray();
-		String className = context.internalClassName;
-		try {
-			File outputClassFile = new File(className + ".class");
-			outputClassFile.getParentFile().mkdirs();
-
-			logger.debug("Writing class '{}' to file {}", context.className, outputClassFile);
-			Files.write(byteClass, outputClassFile);
-		} catch (IOException e) {
-			logger.warn("Could not write class to file", e);
-		}
-	}
-
-	
-	private Class<?> loadClass(ClassWriter cw, Context context){
-		//override classDefine (as it is protected) and define the class.
-	    Class<?> clazz = null;
-	    final byte[] b = cw.toByteArray();
-	    try {
-	      ClassLoader loader = ClassLoader.getSystemClassLoader();
-	      Class<?> cls = Class.forName("java.lang.ClassLoader");
-	      java.lang.reflect.Method method = cls.getDeclaredMethod("defineClass", new Class[] { String.class, byte[].class, int.class, int.class });
-
-	      // protected method invocaton
-	      method.setAccessible(true);
-	      try {
-	        Object[] args = new Object[] { context.className, b, new Integer(0), new Integer(b.length)};
-	        clazz = (Class<?>) method.invoke(loader, args);
-	      } finally {
-	        method.setAccessible(false);
-	      }
-	    } catch (Exception e) {
-	    	logger.error("Could not load generated class {}", context.className, e);
-	      throw new RuntimeException(e);
-	    }
-	    return clazz;
-	}
-	
-	
-	/**
-	 * Create the default constructor.
-	 * If there are custom converters, a call to the initialize method is also added.
-	 * @param cw
-	 * @param parentClass
-	 * @param context
-	 */
-	private void generateConstructor(ClassWriter cw, Class<?> parentClass, Context context) {
-		/*
-		 * public Classname(){
-		 * 	 super();
-		 *   initCustomConverters(); // if present optional
-		 * }
-		 */
-		MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, CONSTRUCTOR_INIT, VOIDMETHOD, null, null);
-		mv.visitCode();
-		mv.visitVarInsn(ALOAD, REFINSTANCE_THIS);
-		mv.visitMethodInsn(INVOKESPECIAL, getInternalName(parentClass), CONSTRUCTOR_INIT, VOIDMETHOD, false);
-		if( !context.customConverters.isEmpty() ){
-			mv.visitVarInsn(ALOAD, REFINSTANCE_THIS);
-			mv.visitMethodInsn(INVOKESPECIAL, context.internalClassName, INIT_CUSTOM_CONVERTERS_METHOD, VOIDMETHOD, false);
-		}
-		mv.visitInsn(RETURN);
-		mv.visitMaxs(4, 2);
-		mv.visitEnd();
-	}
-
-	
 	/**
 	 * Generate a private field per custom converter and a method to initialize them.
 	 * This method is called by the constructor.
@@ -399,242 +278,201 @@ public class GeneratorFactory {
 	 * @param cw
 	 * @param context
 	 */
-	private void generateInitCustomConverters(ClassWriter cw, Context context){
-		if( context.customConverters.isEmpty() ) return;
-		
-		// generate fields
-		for(Entry<Class<?>, ConverterField> converter : context.customConverters.entrySet()){
-			// private Converter converter_?;
-			final ConverterField field = converter.getValue();
-			cw.visitField(ACC_PRIVATE, field.fieldName, converterType.getDescriptor(), field.signature, null).visitEnd();
-		}
-		
-		// generate init method for custom converters
-		MethodVisitor mv = cw.visitMethod(ACC_PRIVATE, INIT_CUSTOM_CONVERTERS_METHOD, VOIDMETHOD, null, null);
-		mv.visitCode();
+	private static <T> Builder<T> generateInitCustomConverters(GeneratorFactory.Context context, Builder<T> builder) {
+		List<Implementation> initConverters = new ArrayList<>();
+		int index = 0;
 
-		for(Entry<Class<?>, ConverterField> entry : context.customConverters.entrySet()){
-			// converter_? = newInstance(customconverter?.class);
-			mv.visitVarInsn(ALOAD, REFINSTANCE_THIS);
-			mv.visitInvokeDynamicInsn("newInstance", getMethodDescriptor(getType(entry.getKey())), newinstanceBootstrapMethod);
-			mv.visitFieldInsn(PUTFIELD, context.internalClassName, entry.getValue().fieldName, converterType.getDescriptor());
+		for (MappedProperties mappedProperties : Iterables.filter(context.classMap.getMappedProperties(), filterOnlyCustomConverters())) {
+			Generic build = parameterizedType(Converter.class, mappedProperties.getSourceProperty().getReadMethod().getGenericReturnType(), mappedProperties.getTargetProperty().getWriteMethod().getParameterTypes()[0]).build();
+			String fieldName = CONVERTER_FIELDNAME_PREFIX + (index++);
+			FieldDescription.Token token = new FieldDescription.Token(fieldName, Opcodes.ACC_PRIVATE, build);
+			
+			LOG.debug("converter field {} = {}", fieldName, build);
+
+			builder = builder.defineField(token.getName(), token.getType(), token.getModifiers());
+			initConverters.add(new FieldInitializer(token, mappedProperties.getCustomConverter()));
+			context.customConverters.put(mappedProperties.getCustomConverter(), new Context.ConverterField(fieldName, token));
 		}
-		
-		mv.visitMaxs(context.customConverters.size()+2, context.customConverters.size()+2);
-		mv.visitInsn(RETURN);
-		mv.visitEnd();
+
+		initConverters.add(new Implementation.Simple(MethodReturn.VOID));
+		builder = builder.defineMethod(INIT_CUSTOM_CONVERTERS_METHOD, Void.TYPE, Visibility.PRIVATE).intercept(new Implementation.Compound(initConverters));
+		return builder;
 	}
 	
 
-	/**
-	 * Generate the method <code>public void convert(source, target)</code>
-	 * @param cw
-	 * @param sourceType
-	 * @param targetType
-	 */
-	private void generate2ArgsConvertMethod(ClassWriter cw, Context context) {
-		/*
-		 * public void convert(source, target){
-		 * 		target.setField1( convert(source.getField1()) );
-		 * 		target.setField2( converter_0(source.getField2()) );
-		 * }
-		 */
-		
-		MethodVisitor mv;
-		{
-			mv = cw.visitMethod(ACC_PUBLIC, "convert", getMethodDescriptor(VOID_TYPE, context.sourceType, context.targetType), null, null);
-			mv.visitCode();
-			
-			for(MappedProperties fieldMap : context.classMap.getMappedProperties()){
-				if( fieldMap.customConverter == null ) {
-					if( fieldMap.sourceProperty.getReadMethod().getReturnType().isAssignableFrom(Collection.class) ||
-						fieldMap.sourceProperty.getReadMethod().getReturnType().isAssignableFrom(Map.class) ||
-						fieldMap.sourceProperty.getReadMethod().getReturnType().isAssignableFrom(Iterable.class) ){
-						generateCollectionFieldMapping(cw, mv, context, fieldMap);
-					}else{
-						generateSimpleFieldMapping(cw, mv, context, fieldMap);
-					}
-				}else{
-					generateLocalFieldconverterFieldMapping(context, mv, fieldMap);
-				}
-			}
-			
-				// this.extendedmapping_name(source, target);
-//				mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_2);
-//				mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_1);
-//				mv.visitMethodInsn(INVOKEVIRTUAL, context.internalClassName, "extendedmapping_name", getMethodDescriptor(VOID_TYPE, context.sourceType, context.targetType), false);
 
-			mv.visitMaxs(context.classMap.getMappedProperties().size()+10, context.classMap.getMappedProperties().size()+10);
-			mv.visitInsn(RETURN);
-			mv.visitEnd();
+	
+	
+	/**
+	 * Create the default constructor.
+	 * If there are custom converters, a call to the initialize method is also added.
+	 * <code>
+	 * public Classname(){
+	 * 	 super();
+	 *   initCustomConverters();
+	 * }
+	 * </code>
+	 * @param cw
+	 * @param parentClass
+	 * @param context
+	 */
+	static class ConstructorBuilder implements Implementation {
+		@Override
+		public InstrumentedType prepare(InstrumentedType instrumentedType) {
+			return instrumentedType;
+		}
+		
+		@Override
+		public ByteCodeAppender appender(Target implementationTarget) {
+			return new Implementation.Simple(
+					MethodVariableAccess.loadThis(),
+					MethodInvocation.invoke(implementationTarget.getInstrumentedType().getDeclaredMethods().filter(ElementMatchers.named(INIT_CUSTOM_CONVERTERS_METHOD)).getOnly()),
+					MethodReturn.VOID
+			).appender(implementationTarget);
 		}
 	}
+
 
 
 	/**
 	 * Generate the method <code>public target convert(source)</code>
-	 * 
-	 * @param cw
-	 * @param converterBootstrapMethod
-	 * @param sourceType
-	 * @param targetType
+	 * <code>
+	 * public T convert(S source){
+	 * 		if( source == null ) return null;
+	 * 		T target = newInstance(T.class);
+	 *      this.convert(source, target);
+	 *      return target;
+	 * }
+	 * </code>
 	 */
-	private void generateConvertMethod(ClassWriter cw, Context context) {
-		/*
-		 * public T convert(S source){
-		 * 		if( source == null ) return null;
-		 * 		T target = newInstance(T.class);
-		 *      this.convert(source, target);
-		 *      return target;
-		 * }
-		 */
-		final int LOCAL_VAR_1 = 2; // this + parameters.size() + 1
-		final String[] exceptions = {getType(InstantiationException.class).getInternalName(), getType(IllegalAccessException.class).getInternalName()};
+	static class Converter1Builder implements ByteCodeAppender, Implementation {
+		@Override
+		public InstrumentedType prepare(InstrumentedType instrumentedType) {
+			return instrumentedType;
+		}
 		
-		MethodVisitor mv = cw.visitMethod(ACC_PUBLIC, "convert", getMethodDescriptor(context.targetType, context.sourceType), null, exceptions);
-		mv.visitCode();
-		// if null then return
+		@Override
+		public ByteCodeAppender appender(Target implementationTarget) {
+			return this;
+		}
+		
+		@Override
+		public Size apply(MethodVisitor methodVisitor, Implementation.Context implementationContext, MethodDescription instrumentedMethod) {
+/*
 		nullCheckWithReturn(mv, REFINSTANCE_ARGUMENT_1);
 		// create new instance
 		mv.visitInvokeDynamicInsn("newInstance", getMethodDescriptor(context.targetType), newinstanceBootstrapMethod);
 		mv.visitVarInsn(ASTORE, LOCAL_VAR_1);
+
 		// this.convert(source, target)
 		mv.visitVarInsn(ALOAD, REFINSTANCE_THIS);
 		mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_1);
 		mv.visitVarInsn(ALOAD, LOCAL_VAR_1);
 		mv.visitMethodInsn(INVOKEVIRTUAL, context.internalClassName, "convert", getMethodDescriptor(VOID_TYPE, context.sourceType, context.targetType), false);
+		
 		// return target
 		mv.visitVarInsn(ALOAD, LOCAL_VAR_1);
 		mv.visitInsn(context.targetType.getOpcode(IRETURN));
-		mv.visitMaxs(8, 3);
-		mv.visitEnd();
-	}
-
-	
-	/**
-	 * Write bytecode for a single property conversion.
-	 * The convert call is done by InvokeDynamic. It looks somewhat like the following:
-	 * <pre>
-	 * target.setValue( convert(source.getValue()) );
-	 * </pre>
-	 * 
-	 * @param mv MethodVisitor to add to
-	 * @param sourceType Type of the source (class)
-	 * @param sourceGetter The actual get method
-	 * @param targetType Type of the target (class)
-	 * @param targetSetter The actual set method
-	 * @throws IllegalArgumentException if getter or setter is <code>null</code>
 	 */
-	private void generateSimpleFieldMapping(ClassWriter cw, MethodVisitor mv, Context context, MappedProperties fieldMap){
-		final Method sourceGetter = fieldMap.sourceProperty.getReadMethod();
-		final Method targetSetter = fieldMap.targetProperty.getWriteMethod();
-		final String convertMethodDescriptor = getMethodDescriptor(getType(targetSetter.getParameterTypes()[0]), getType(sourceGetter.getReturnType()));
-		
-		String genericMethodDescriptor = createMethodDescriptor(targetSetter.getGenericParameterTypes()[0], sourceGetter.getGenericReturnType());
-		if( convertMethodDescriptor.equals(genericMethodDescriptor) ){
-			genericMethodDescriptor = ""; // No generics, so no specific signature needed
-		}
-		
-		mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_2);
-		mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_1);
-		mv.visitMethodInsn(INVOKEVIRTUAL, context.sourceType.getDescriptor(), sourceGetter.getName(), getMethodDescriptor(sourceGetter), false); // source.get()
-		mv.visitInvokeDynamicInsn("convert", convertMethodDescriptor, converterBootstrapMethod, genericMethodDescriptor);
-		mv.visitMethodInsn(INVOKEVIRTUAL, context.targetType.getDescriptor(), targetSetter.getName(), getMethodDescriptor(targetSetter), false); // target.set()
-	}
-
-	
-	private Type getGenericType(java.lang.reflect.Type type){
-//		(Ljava/util/Map<Ljava/lang/String;Lorg/spee/commons/beans/convert/Address;>;)Ljava/util/List<Lorg/spee/commons/beans/convert/Address;>;
-		
-		if( type instanceof ParameterizedType ){
-			ParameterizedType classTypes = (ParameterizedType)type;
-			if( ((Class<?>)classTypes.getRawType()).isAssignableFrom(Map.class) ){
-				return getType(Map.Entry.class);
+            WithImplicitInvocationTargetType invokeDynamic;
+			try {
+				invokeDynamic = MethodInvocation.invoke( new MethodDescription.ForLoadedMethod( BeanCreationStrategy.class.getDeclaredMethod("bootstrap", MethodHandles.Lookup.class, String.class, MethodType.class) ) );
+			} catch (NoSuchMethodException | SecurityException e) {
+				e.printStackTrace();
+				throw new RuntimeException(e);
 			}
 			
-			return getType((Class<?>)classTypes.getActualTypeArguments()[0]);
-		}else {
-			return getType((Class<?>)type);
+			final ParameterDescription parameterDescription = instrumentedMethod.getParameters().get(0);			
+			final int LOCAL_FIELD_OFFSET = parameterDescription.getOffset() +1;
+			final TypeDescription returnType = 
+					new TypeDescription.Latent(instrumentedMethod.getReturnType().getTypeName(), instrumentedMethod.getReturnType().getModifiers(), instrumentedMethod.getReturnType(), instrumentedMethod.getReturnType().getInterfaces());
+			MethodVariableAccess returnVar = MethodVariableAccess.of(returnType);
+
+			
+			List<StackManipulation> insr = new ArrayList<>();
+			insr.add( invokeDynamic.dynamic("", returnType, Collections.<TypeDescription>emptyList(), Collections.emptyList()) );
+			insr.add(returnVar.storeAt(LOCAL_FIELD_OFFSET));
+			
+			insr.add(MethodVariableAccess.loadThis());
+			insr.add(MethodVariableAccess.load(parameterDescription));
+			insr.add(returnVar.loadFrom(LOCAL_FIELD_OFFSET));
+			insr.add(MethodInvocation.invoke(implementationContext.getInstrumentedType().getDeclaredMethods().filter(named(CONVERT_METHODNAME).and(takesArguments(2))).getOnly()));
+			
+			insr.add(returnVar.loadFrom(LOCAL_FIELD_OFFSET));
+			insr.add(MethodReturn.of(returnType));
+			
+			net.bytebuddy.implementation.bytecode.StackManipulation.Size size = new StackManipulation.Compound(insr).apply(methodVisitor, implementationContext);
+			return new Size(size.getMaximalSize()+1, instrumentedMethod.getStackSize()+1);
 		}
 	}
-	
-	
-	private void generateCollectionFieldMapping(ClassWriter cw, MethodVisitor mv, Context context, MappedProperties fieldMap){
-		final Method sourceGetter = fieldMap.sourceProperty.getReadMethod(); // Map<K,V> getPlaces()
-		final Method targetSetter = fieldMap.targetProperty.getWriteMethod(); // void setAddress( List<T> )
-		final String convertMethodDescriptor = getMethodDescriptor(getGenericType(targetSetter.getGenericParameterTypes()[0]), getGenericType(sourceGetter.getGenericReturnType()));
-		final String loopMethodDescriptor = getMethodDescriptor(VOID_TYPE, getType(sourceGetter.getReturnType()), getType(targetSetter.getParameterTypes()[0]), getType(Function.class)); // public void transform(Iterable,Collection,Function)
+
+
+
+	static class Converter2Builder implements ByteCodeAppender, Implementation {
+		private GeneratorFactory.Context context;
+		private static WithImplicitInvocationTargetType invokeConvert;
+
+		public Converter2Builder(GeneratorFactory.Context context) {
+			this.context = context;
+			try {
+				invokeConvert = MethodInvocation.invoke( new MethodDescription.ForLoadedMethod( MappingLocator.class.getDeclaredMethod("bootstrap", MethodHandles.Lookup.class, String.class, MethodType.class) ) );
+			} catch (NoSuchMethodException | SecurityException e) {
+				e.printStackTrace();
+				throw new RuntimeException(e);
+			}
+		}
+
+		@Override
+		public InstrumentedType prepare(InstrumentedType instrumentedType) {
+			return instrumentedType;
+		}
 		
-/*
-		List<Address> l = new ArrayList<>();
-		target.setAddresses(l);//Lists.newArrayList(Iterables.transform(source.getPlaces().values(), t)));
-		CollectionUtils.transForm(source.getAddresses(), l, t);
-
-mv.visitTypeInsn(NEW, "org/spee/commons/convert/generator/GeneratorFactoryTest$2"); // new function
-mv.visitInsn(DUP);
-mv.visitVarInsn(ALOAD, 0);
-mv.visitMethodInsn(INVOKESPECIAL, "org/spee/commons/convert/generator/GeneratorFactoryTest$2", "<init>", "(Lorg/spee/commons/convert/generator/GeneratorFactoryTest;)V", false);
-mv.visitVarInsn(ASTORE, 5); // function
-mv.visitTypeInsn(NEW, "java/util/ArrayList"); // new list
-mv.visitInsn(DUP);
-mv.visitMethodInsn(INVOKESPECIAL, "java/util/ArrayList", "<init>", "()V", false);
-mv.visitVarInsn(ASTORE, 6); // new list
-mv.visitVarInsn(ALOAD, 2); // source
-mv.visitVarInsn(ALOAD, 6); // new list 
-mv.visitMethodInsn(INVOKEVIRTUAL, "org/spee/commons/beans/convert/DtoPerson", "setAddresses", "(Ljava/util/List;)V", false);
-mv.visitVarInsn(ALOAD, 1); // target
-mv.visitMethodInsn(INVOKEVIRTUAL, "org/spee/commons/beans/convert/Person", "getAddresses", "()Ljava/util/Collection;", false);
-mv.visitVarInsn(ALOAD, 6); // new list
-mv.visitVarInsn(ALOAD, 5); // function
-mv.visitMethodInsn(INVOKESTATIC, "org/spee/commons/utils/CollectionUtils", "transformInto", "(Ljava/lang/Iterable;Ljava/util/Collection;Lcom/google/common/base/Function;)V", false);
- */
-		final int LOCAL_VAR_LISTVALUE = 3;
-		final int LOCAL_VAR_FUNCTION = 4;
-
-		String functionClassname = "org/spee/commons/convert/generator/GeneratorFactoryTest$2";
-		mv.visitTypeInsn(NEW, functionClassname); // new function
-		mv.visitInsn(DUP);
-		mv.visitVarInsn(ALOAD, REFINSTANCE_THIS);
-		mv.visitMethodInsn(INVOKESPECIAL, functionClassname, CONSTRUCTOR_INIT, "(Lorg/spee/commons/convert/generator/GeneratorFactoryTest;)V", false);
-		mv.visitVarInsn(ASTORE, LOCAL_VAR_FUNCTION); // function
+		@Override
+		public ByteCodeAppender appender(Target implementationTarget) {
+			return this;
+		}
 		
-		// create new instance
-		mv.visitInvokeDynamicInsn("newInstance", getMethodDescriptor(getType(targetSetter.getParameterTypes()[0])), newinstanceBootstrapMethod);
-		mv.visitVarInsn(ASTORE, LOCAL_VAR_LISTVALUE);
-		// save to setter
-		mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_2);
-		mv.visitVarInsn(ALOAD, LOCAL_VAR_LISTVALUE);
-		mv.visitMethodInsn(INVOKEVIRTUAL, context.targetType.getDescriptor(), targetSetter.getName(), getMethodDescriptor(targetSetter), false);
-		// loop and convert
-		mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_1);
-		mv.visitMethodInsn(INVOKEVIRTUAL, context.sourceType.getDescriptor(), sourceGetter.getName(), getMethodDescriptor(sourceGetter), false);
-		mv.visitVarInsn(ALOAD, LOCAL_VAR_LISTVALUE);
-		mv.visitVarInsn(ALOAD, LOCAL_VAR_FUNCTION); // function
-//		mv.visitInsn(ACONST_NULL); // getConverter()
-////	mv.visitInvokeDynamicInsn("getConverter", convertMethodDescriptor, converterBootstrapMethod, "");
-		mv.visitInvokeDynamicInsn("transform", loopMethodDescriptor, listBootstrapMethod); // CollectionUtils.transformInto(Iterable, Collection, Function);
-	}
+		
+		enum ConverterStackManipulators {
+			DIRECT{
+				/**
+				 * Write bytecode for a single property conversion.
+				 * The convert call is done by InvokeDynamic. It looks somewhat like the following:
+				 * <pre>
+				 * target.setValue( convert(source.getValue()) );
+				 * </pre>
+				 */
+				StackManipulation getCode(MappedProperties fieldMap, ParameterDescription source, ParameterDescription target, GeneratorFactory.Context context, Implementation.Context implementationContext){
+					final MethodDescription.ForLoadedMethod sourceMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getSourceProperty().getReadMethod());
+					final MethodDescription.ForLoadedMethod targetMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getTargetProperty().getWriteMethod());
+					final TypeDescription targetType = targetMethodDesc.getParameters().get(0).getType().asErasure();
+					
+					LOG.debug("convert: read={} ,write={}", fieldMap.getSourceProperty().getReadMethod(), fieldMap.getTargetProperty().getWriteMethod());
 
-	
-	
-	/**
-	 * Write bytecode for a single property conversion, where there should be used a specific converter.
-	 * This converter is gotten from a local field.
-	 * <pre>
-	 * target.setValue( (TargetType)converter_0.convert(source.getValue()) );
-	 * </pre>
-	 * @param context
-	 * @param mv
-	 * @param fieldMap
-	 * @param sourceGetter
-	 * @param targetSetter
-	 */
-	private void generateLocalFieldconverterFieldMapping(final Context context, final MethodVisitor mv, final MappedProperties fieldMap) {
-		final Method sourceGetter = fieldMap.sourceProperty.getReadMethod();
-		final Method targetSetter = fieldMap.targetProperty.getWriteMethod();
-		final ConverterField field = context.customConverters.get(fieldMap.customConverter);
-		final Class<?> setterArgumentType = targetSetter.getParameterTypes()[0];
-
+					return new StackManipulation.Compound(
+							MethodVariableAccess.load(target),
+							MethodVariableAccess.load(source),
+							MethodInvocation.invoke( sourceMethodDesc ),
+							invokeConvert.dynamic(CONVERT_METHODNAME, targetType, Arrays.asList(sourceMethodDesc.getReturnType().asErasure()), Collections.emptyList()),
+							MethodInvocation.invoke( targetMethodDesc )
+					);
+				}				
+			},
+			USING_FIELD{
+				/**
+				 * Write bytecode for a single property conversion, where there should be used a specific converter.
+				 * This converter is gotten from a local field.
+				 * <pre>
+				 * target.setValue( (TargetType)converter_0.convert(source.getValue()) );
+				 * </pre>
+				 */
+				StackManipulation getCode(MappedProperties fieldMap, ParameterDescription source, ParameterDescription target, GeneratorFactory.Context context, Implementation.Context implementationContext) {
+					final MethodDescription.ForLoadedMethod sourceMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getSourceProperty().getReadMethod());
+					final MethodDescription.ForLoadedMethod targetMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getTargetProperty().getWriteMethod());
+					
+					LOG.debug("convert: read={} ,write={}, converter={}", fieldMap.getSourceProperty().getReadMethod(), fieldMap.getTargetProperty().getWriteMethod(), fieldMap.getCustomConverter());
+					
+					/*
 		mv.visitVarInsn(ALOAD, REFINSTANCE_ARGUMENT_2);
 		mv.visitVarInsn(ALOAD, REFINSTANCE_THIS);
 		mv.visitFieldInsn(GETFIELD, context.internalClassName, field.fieldName, converterType.getDescriptor());
@@ -651,5 +489,54 @@ mv.visitMethodInsn(INVOKESTATIC, "org/spee/commons/utils/CollectionUtils", "tran
 			mv.visitTypeInsn(CHECKCAST, setterArgumentType.getTypeName());						
 		}
 		mv.visitMethodInsn(INVOKEVIRTUAL, context.targetType.getDescriptor(), targetSetter.getName(), getMethodDescriptor(targetSetter), false);
+					 */
+					
+					FieldDescription.Token field = context.customConverters.get(fieldMap.getCustomConverter()).field;
+					try {
+						return new StackManipulation.Compound(
+							MethodVariableAccess.load(target),
+							MethodVariableAccess.loadThis(),
+							FieldAccess.forField(new FieldDescription.Latent(implementationContext.getInstrumentedType().asErasure(), field)).read(),
+							MethodVariableAccess.load(source),
+							MethodInvocation.invoke(sourceMethodDesc),
+							MethodInvocation.invoke(new MethodDescription.ForLoadedMethod(Converter.class.getMethod(CONVERT_METHODNAME, Object.class))),
+							TypeCasting.to(targetMethodDesc.getParameters().get(0).getType()),
+							MethodInvocation.invoke(targetMethodDesc)
+						);
+					} catch (NoSuchMethodException | SecurityException e) {
+					}
+					
+					return null;
+				}
+			};
+			
+			
+			abstract StackManipulation getCode(MappedProperties fieldMap, ParameterDescription source, ParameterDescription target, GeneratorFactory.Context context, Implementation.Context implementationContext);
+		}
+		
+		
+		@Override
+		public Size apply(MethodVisitor methodVisitor, Implementation.Context implementationContext, MethodDescription instrumentedMethod) {
+			ParameterDescription source = instrumentedMethod.getParameters().get(0);
+			ParameterDescription target = instrumentedMethod.getParameters().get(1);
+			List<StackManipulation> insr = new ArrayList<>();
+			
+			LOG.debug("Mapping {} properties", this.context.classMap.getMappedProperties().size());
+			int incr = 0;
+			for(MappedProperties fieldMap : this.context.classMap.getMappedProperties()){
+				if( !fieldMap.hasCustomConverter() ) {
+					insr.add( ConverterStackManipulators.DIRECT.getCode(fieldMap, source, target, this.context, implementationContext) );
+				}else{
+					insr.add( ConverterStackManipulators.USING_FIELD.getCode(fieldMap, source, target, this.context, implementationContext) );
+					incr++;
+				}
+			}
+			
+			insr.add(MethodReturn.VOID);
+			net.bytebuddy.implementation.bytecode.StackManipulation.Size size = new StackManipulation.Compound(insr).apply(methodVisitor, implementationContext);
+			return new Size(size.getMaximalSize()+incr, instrumentedMethod.getStackSize()+incr);
+		}
+
 	}
+
 }
