@@ -1,6 +1,7 @@
 package org.spee.commons.convert.generator;
 
 import static net.bytebuddy.jar.asm.Opcodes.ACONST_NULL;
+import static net.bytebuddy.jar.asm.Opcodes.ALOAD;
 import static net.bytebuddy.jar.asm.Opcodes.ARETURN;
 import static net.bytebuddy.jar.asm.Opcodes.F_SAME;
 import static net.bytebuddy.jar.asm.Opcodes.IFNONNULL;
@@ -11,12 +12,14 @@ import org.spee.commons.convert.generator.ClassMap.MappedProperties;
 import com.google.common.base.Predicate;
 
 import net.bytebuddy.description.method.MethodDescription;
+import net.bytebuddy.description.type.TypeDefinition;
+import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.dynamic.scaffold.InstrumentedType;
 import net.bytebuddy.implementation.Implementation;
+import net.bytebuddy.implementation.Implementation.Composable;
 import net.bytebuddy.implementation.bytecode.ByteCodeAppender;
 import net.bytebuddy.jar.asm.Label;
 import net.bytebuddy.jar.asm.MethodVisitor;
-import net.bytebuddy.jar.asm.Opcodes;
 
 final class ClassGeneratorHelper {
 
@@ -25,7 +28,7 @@ final class ClassGeneratorHelper {
 	 * @param mv The method to add the check to.
 	 * @param variableIndex 
 	 */
-	public static class NullcheckAndReturnBuilder implements ByteCodeAppender, Implementation {
+	public static class NullcheckAndReturnBuilder implements ByteCodeAppender, Composable {
 		private int variableIndex;
 		private boolean returnNull;
 
@@ -74,18 +77,29 @@ final class ClassGeneratorHelper {
 			return this;
 		}
 
+		/**
+		 * Return a new {@link Implementation} that is a compound of this and the given implementation.
+		 */
+		@Override
+		public Implementation andThen(Implementation implementation) {
+			return new Implementation.Compound(this, implementation);
+		}
+		
+		/**
+		 * if ( offset == null ){ return; }
+		 */
 		@Override
 		public Size apply(MethodVisitor methodVisitor, Context implementationContext, MethodDescription instrumentedMethod) {
-			final Label jumpNullCheck = new Label();
-			methodVisitor.visitVarInsn(Opcodes.ALOAD, variableIndex);
-			methodVisitor.visitJumpInsn(IFNONNULL, jumpNullCheck);
+			final Label jumpSkipReturn = new Label();
+			methodVisitor.visitVarInsn(ALOAD, variableIndex);
+			methodVisitor.visitJumpInsn(IFNONNULL, jumpSkipReturn);
 			if( returnNull ){
 				methodVisitor.visitInsn(ACONST_NULL);
 				methodVisitor.visitInsn(ARETURN);
 			} else {
 				methodVisitor.visitInsn(RETURN);
 			}
-			methodVisitor.visitLabel(jumpNullCheck);
+			methodVisitor.visitLabel(jumpSkipReturn);
 			methodVisitor.visitFrame(F_SAME, 0, null, 0, null);
 			return new Size(0, 0);
 		}
@@ -93,15 +107,50 @@ final class ClassGeneratorHelper {
 	}
 
 
-	
+	/**
+	 * {@link Predicate} that return <code>true</code> when the {@link MappedProperties} has a custom converter set.
+	 * @return
+	 * @see MappedProperties#hasCustomConverter()
+	 */
 	public static Predicate<MappedProperties> filterOnlyCustomConverters(){
 		return new Predicate<ClassMap.MappedProperties>() {
 			@Override
 			public boolean apply(MappedProperties input) {
-				return input.customConverter != null;
+				return input.hasCustomConverter();
 			}
 		};
 	}
 
+
+	/**
+	 * If the given type is a primitive, then return the wrapper class.
+	 * @param type Some type
+	 * @return If the type represents a boolean, byte, short, char, int, long, float or double
+	 * then return a {@link TypeDescription} for the java.util wrapper class.
+	 * If the given type does not represent a primitive, then return null;
+	 */
+	public static TypeDescription getPrimitiveWrapperType(TypeDefinition type) {
+		if( type.isPrimitive() ){
+	        if (type.represents(boolean.class)) {
+	            return new TypeDescription.ForLoadedType(Boolean.class);
+	        } else if (type.represents(byte.class)) {
+	            return new TypeDescription.ForLoadedType(Byte.class);
+	        } else if (type.represents(short.class)) {
+	            return new TypeDescription.ForLoadedType(Short.class);
+	        } else if (type.represents(char.class)) {
+	            return new TypeDescription.ForLoadedType(Character.class);
+	        } else if (type.represents(int.class)) {
+	            return new TypeDescription.ForLoadedType(Integer.class);
+	        } else if (type.represents(long.class)) {
+	            return new TypeDescription.ForLoadedType(Long.class);
+	        } else if (type.represents(float.class)) {
+	            return new TypeDescription.ForLoadedType(Float.class);
+	        } else if (type.represents(double.class)) {
+	            return new TypeDescription.ForLoadedType(Double.class);
+	        }
+		}
+		return null;
+	}
+	
 	
 }
