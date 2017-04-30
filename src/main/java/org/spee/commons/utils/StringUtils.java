@@ -11,23 +11,23 @@ public class StringUtils {
 	 * @return
 	 */
 	public static Comparator<String> stringComparer(boolean ignoreCasing){
-		if( ignoreCasing ){
-			return new Comparator<String>() {
-				@Override
-				public int compare(final String o1, final String o2) {
-					return o1 == null ? (o2 == null ? 0 : 1) : o1.compareToIgnoreCase(o2);
-				}
-			};
-		}else{
-			return new Comparator<String>() {
-				@Override
-				public int compare(final String o1, final String o2) {
-					return o1 == null ? (o2 == null ? 0 : 1) : o1.compareTo(o2);
-				}
-			};
-		}
-		
+		return ignoreCasing ? StringCompare.IGNORECASE : StringCompare.EXACTCASE;
 	}
+
 	
+	private enum StringCompare implements Comparator<String> {
+		EXACTCASE{
+			@Override
+			public int compare(final String o1, final String o2) {
+				return o1 == null ? (o2 == null ? 0 : 1) : o1.compareTo(o2);
+			}
+		},
+		IGNORECASE{
+			@Override
+			public int compare(final String o1, final String o2) {
+				return o1 == null ? (o2 == null ? 0 : 1) : o1.compareToIgnoreCase(o2);
+			}
+		}
+	}
 	
 }
