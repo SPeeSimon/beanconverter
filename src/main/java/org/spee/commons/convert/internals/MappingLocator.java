@@ -58,7 +58,7 @@ public class MappingLocator {
 	public static CallSite bootstrap(final MethodHandles.Lookup caller, final String name, final MethodType type, String genericMethodDescriptor) throws NoSuchMethodException, IllegalAccessException {
 		if( genericMethodDescriptor != null && genericMethodDescriptor.length() > 1 ){
 			// generic method
-			logger.debug("bootstrap called for generic conversion {}", genericMethodDescriptor);
+			logger.trace("bootstrap called for generic conversion {}", genericMethodDescriptor);
 			Type type2 = genericMethod.getIfPresent(genericMethodDescriptor);
 			
 		}
@@ -67,7 +67,7 @@ public class MappingLocator {
 
 	
 	public static CallSite bootstrap(final MethodHandles.Lookup caller, final String name, final MethodType type) throws NoSuchMethodException, IllegalAccessException {
-		logger.debug("bootstrap called for conversion {}", type);
+		logger.trace("bootstrap called for conversion {}", type);
 		final Class<?> sourceType = type.parameterType(0);
 		final Class<?> targetType = type.returnType();
 		MethodHandle converter;
