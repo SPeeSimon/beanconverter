@@ -1,11 +1,13 @@
 package org.spee.commons.convert.internals;
 
+import static java.lang.reflect.Modifier.isPublic;
+import static java.lang.reflect.Modifier.isStatic;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,7 +45,7 @@ public class MethodConverterMapper implements InternalConverter {
 			final Lookup lookup = MethodHandles.lookup().in(type);
 			
 			for (Method method : type.getMethods()) {
-				if( Modifier.isPublic(method.getModifiers()) && !Modifier.isStatic(method.getModifiers()) && !(Void.TYPE == method.getReturnType()) && method.getParameterCount()==0 ) {
+				if( isPublic(method.getModifiers()) && !isStatic(method.getModifiers()) && !(Void.TYPE == method.getReturnType()) && method.getParameterCount()==0 ) {
 					try {
 						if (method.getName().startsWith("asType")) { // groovy like
 							foundMethods.put(method.getReturnType(), lookup.unreflect(method));
@@ -58,7 +60,7 @@ public class MethodConverterMapper implements InternalConverter {
 			}
 			
 			for (Constructor<?> constructor : type.getConstructors()) { // copy constructors
-				if( Modifier.isPublic(constructor.getModifiers()) && constructor.getParameterCount() == 1 ){
+				if( isPublic(constructor.getModifiers()) && constructor.getParameterCount() == 1 ){
 					try {
 						if( !foundMethods.containsKey(constructor.getParameterTypes()[0]) ){
 							foundMethods.put(constructor.getParameterTypes()[0], lookup.unreflectConstructor(constructor));

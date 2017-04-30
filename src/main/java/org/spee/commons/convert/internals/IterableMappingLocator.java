@@ -7,15 +7,12 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.util.Collection;
 import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.spee.commons.utils.CollectionUtils;
 import org.spee.commons.utils.MapUtils;
 
 import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.Lists;
 
 
 

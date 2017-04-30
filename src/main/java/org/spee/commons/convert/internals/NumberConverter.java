@@ -61,16 +61,16 @@ public final class NumberConverter implements InternalConverter {
 			if( Short.class == targetType || Short.TYPE == targetType ){
 				return valueOfMethodHandle.get(Short.class);
 			}
-			if( Integer.class== targetType || Integer.TYPE== targetType ){
+			if( Integer.class == targetType || Integer.TYPE == targetType ){
 				return valueOfMethodHandle.get(Integer.class);
 			}
-			if( Long.class== targetType || Long.TYPE== targetType ){
+			if( Long.class == targetType || Long.TYPE == targetType ){
 				return valueOfMethodHandle.get(Long.class);
 			}
-			if( Float.class== targetType || Float.TYPE== targetType ){
+			if( Float.class == targetType || Float.TYPE == targetType ){
 				return valueOfMethodHandle.get(Float.class);
 			}
-			if( Double.class== targetType || Double.TYPE== targetType ){
+			if( Double.class == targetType || Double.TYPE == targetType ){
 				return valueOfMethodHandle.get(Double.class);
 			}
 		}
