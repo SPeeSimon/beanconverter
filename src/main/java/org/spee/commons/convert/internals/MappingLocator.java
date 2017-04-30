@@ -30,7 +30,6 @@ public class MappingLocator {
 	static{
 		interalConverters.add(new ImmutableMapper());
 		interalConverters.add(new MethodConverterMapper());
-//		interalConverters.add(new EnumConverter());
 		interalConverters.add(new NumberConverter());
 		interalConverters.add(new StringToEnumConverterFactory());
 		interalConverters.add(new IntegerToEnumConverterFactory());
