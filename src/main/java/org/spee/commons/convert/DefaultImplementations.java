@@ -22,7 +22,7 @@ import com.google.common.base.Supplier;
 /**
  * This class is where the matching of an Interface to an implementation is kept.
  * Default are the Collection interfaces mapped to a specific implementation of that interface.
- * So if you want to retrieve an implementation for {@link List} all you need to do is call the {@link #getImplementationFor(Class)}
+ * So if you want to retrieve an implementation for {@link List} you need to call the {@link #getImplementationFor(Class)}
  * method with <code>List.class</code>.
  * 
  * @author shave
@@ -79,12 +79,14 @@ public final class DefaultImplementations {
 	 * Bind an implementation to an interface.
 	 * @param interfaceClass An interface class
 	 * @param implementationClass An implementation class that implements the interface and has a default constructor
-	 * @throws IllegalArgumentException
-	 *  if <code>interfaceClass</code> is not an Interface,
-	 *  if <code>implementationClass</code> is an interface,
-	 *  if <code>implementationClass</code> is not assignable from the interface,
-	 *  if <code>implementationClass</code> is already configured,
-	 *  if <code>implementationClass</code> does not have a default constuctor.
+	 * @throws IllegalArgumentException This execption is thrown when:
+	 * <ul>
+	 * <li><code>interfaceClass</code> is not an Interface,</li>
+	 * <li><code>implementationClass</code> is an interface,</li>
+	 * <li><code>implementationClass</code> is not assignable from the interface,</li>
+	 * <li><code>implementationClass</code> is already configured,</li>
+	 * <li><code>implementationClass</code> does not have a default constuctor.</li>
+	 * </ul>
 	 */
 	public static void addImplementationForInterface(Class<?> interfaceClass, Class<?> implementationClass){
 		Preconditions.checkArgument(interfaceClass.isInterface(), "Not an interface: %s", interfaceClass);

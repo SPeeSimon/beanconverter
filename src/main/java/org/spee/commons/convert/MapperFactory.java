@@ -3,6 +3,8 @@ package org.spee.commons.convert;
 import static net.bytebuddy.description.type.TypeDescription.Generic.Builder.parameterizedType;
 import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.named;
+import static org.spee.commons.utils.ReflectionUtils.hasParameterCount;
+import static org.spee.commons.utils.ReflectionUtils.isAnnotationPresentOnMethod;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -15,7 +17,6 @@ import org.slf4j.LoggerFactory;
 import org.spee.commons.convert.generator.BeanCreationStrategy;
 import org.spee.commons.convert.internals.MappingLocator;
 import org.spee.commons.utils.CollectionUtils;
-import org.spee.commons.utils.ReflectionUtils;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
@@ -87,7 +88,7 @@ public class MapperFactory {
     
     
 	public static void register(Class<?> container){
-		final Predicate<Method> methodCheck = Predicates.and(ReflectionUtils.isAnnotationPresentOnMethod(Converter.class), ReflectionUtils.hasParameterCount(1));
+		final Predicate<Method> methodCheck = Predicates.and(isAnnotationPresentOnMethod(Converter.class), hasParameterCount(1));
 		for (Method method : container.getMethods()) {
 			if( methodCheck.apply(method) ){
 				logger.debug("Registering @Converter on method {} of {}", method, container);
