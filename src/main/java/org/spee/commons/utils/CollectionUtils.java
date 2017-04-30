@@ -1,7 +1,11 @@
 package org.spee.commons.utils;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.function.Consumer;
+
+import org.spee.commons.convert.Converter;
 
 import com.google.common.base.Function;
 
@@ -24,5 +28,14 @@ public class CollectionUtils {
 			}
 		}
 	}
+	
+	@Converter
+	public static <T> List<T> toList(Collection<T> from){
+		if( from instanceof List ){
+			return (List<T>) from;
+		}
+		return new ArrayList<>(from);
+	}
+	
 	
 }
