@@ -11,12 +11,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.sql.Time;
 import java.sql.Timestamp;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Currency;
 import java.util.Date;
@@ -307,7 +305,16 @@ public class DefaultConverters {
 		}
 	}
 	
-	
+	@Converter
+	public static ByteBuffer toByteBuffer(byte[] s){
+		return ByteBuffer.wrap(s);
+	}
+
+	@Converter
+	public static byte[] toByteArray(ByteBuffer s){
+		return s.array();
+	}
+
 	
     /*
      * Register additional common "immutable" types
