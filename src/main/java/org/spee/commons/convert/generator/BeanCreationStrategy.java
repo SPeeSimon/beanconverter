@@ -59,7 +59,7 @@ public class BeanCreationStrategy {
 	private static final Map<String,Function<Class<?>, Optional<MethodHandle>>> creationStrategyMap;
 
 	static{
-		Map<String,Function<Class<?>, Optional<MethodHandle>>> strategy = new IdentityHashMap<>(5);
+		Map<String,Function<Class<?>, Optional<MethodHandle>>> strategy = new IdentityHashMap<>(6);
 		strategy.put(STRATEGY_CONSTRUCTOR, ByConstructor.INSTANCE);
 		strategy.put(STRATEGY_SUPPLIER, bySupplierStrategy);
 		strategy.put(STRATEGY_INTERFACE, ByInterface.INSTANCE);
@@ -280,10 +280,6 @@ public class BeanCreationStrategy {
 //		return null;
 //	}
 //	public static Function<Class<?>, Optional<MethodHandle>> byFactory(Class<?> type) {
-//		return null;
-//	}
-//	public static Function<Class<?>, Optional<MethodHandle>> xmlBeansBased(Class<?> type) {
-//		if org.apache.xmlbeans.XmlObject is present
 //		return null;
 //	}
 
