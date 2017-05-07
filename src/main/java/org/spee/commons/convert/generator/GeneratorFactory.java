@@ -17,8 +17,6 @@ import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Base64.Encoder;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,7 +32,6 @@ import com.google.common.base.Converter;
 import com.google.common.collect.Iterables;
 
 import net.bytebuddy.ByteBuddy;
-import net.bytebuddy.NamingStrategy;
 import net.bytebuddy.description.field.FieldDescription;
 import net.bytebuddy.description.field.FieldDescription.Latent;
 import net.bytebuddy.description.field.FieldDescription.Token;
@@ -62,7 +59,6 @@ import net.bytebuddy.implementation.bytecode.member.MethodVariableAccess;
 import net.bytebuddy.jar.asm.MethodVisitor;
 import net.bytebuddy.jar.asm.Opcodes;
 import net.bytebuddy.matcher.ElementMatchers;
-import net.bytebuddy.utility.RandomString;
 
 /**
  * Generating the converter. It looks like:
@@ -84,10 +80,10 @@ public class gen_Source_TypetoTargetTypeConverter extends Object {
 	public void convert(Source source, Target target){
 		target.setValue0( convert(source.getValue0(), TargetValue0.class) );
 		target.setValue1( (TargetType)converter_1.convert(source.getValue1()) );
-		// target.setValue2( convert(MapUtils.getValue(source.getValue(), convert("key"))) );
-		// List t = new ArrayList();
-		// target.setvalue(t);
-		// CollectionUtils.transformInto(source.getList(), t, fieldTransformer());
+		// TODO target.setValue2( convert(MapUtils.getValue(source.getValue(), convert("key"))) );
+		// TODO List t = new ArrayList();
+		// TODO target.setvalue(t);
+		// TODO CollectionUtils.transformInto(source.getList(), t, fieldTransformer());
 	}
 	
 	public Target convert(Source source){
@@ -100,10 +96,12 @@ public class gen_Source_TypetoTargetTypeConverter extends Object {
 </code>
  */
 public class GeneratorFactory {
-	private static final String DEFAULT_PACKAGE = "gen.spee.commons.converter";
+	static final String DEFAULT_PACKAGE = "gen.spee.commons.converter";
 	private static final String INIT_CUSTOM_CONVERTERS_METHOD = "initCustomConverters";
 	private static final String CONVERTER_FIELDNAME_PREFIX = "converter_";
 	private static final String CONVERT_METHODNAME = "convert";
+	private static final Class<Converter> INTERNAL_CONVERTER_TYPE = Converter.class;
+
 	private static final Logger LOG = LoggerFactory.getLogger(GeneratorFactory.class);
 	/**
 	 * Parent class for generated converters
@@ -116,12 +114,14 @@ public class GeneratorFactory {
 	private static WithImplicitInvocationTargetType ConverterMethodInvoke;
 
 	static {
-		// invoke dynamic BootstrapMethod (BSM) for converters and constructors
 		try {
+			// invoke dynamic BootstrapMethod (BSM) for converters and constructors
 			BeanCreationStrategyinvokeDynamic = MethodInvocation.invoke( new MethodDescription.ForLoadedMethod( BeanCreationStrategy.class.getDeclaredMethod("bootstrap", MethodHandles.Lookup.class, String.class, MethodType.class) ) );
 			MappingLocatorInvokeDynamic = MethodInvocation.invoke( new MethodDescription.ForLoadedMethod( MappingLocator.class.getDeclaredMethod("bootstrap", MethodHandles.Lookup.class, String.class, MethodType.class) ) );
-			ConverterMethodInvoke = MethodInvocation.invoke(new MethodDescription.ForLoadedMethod(Converter.class.getMethod(CONVERT_METHODNAME, Object.class)));
+			// Direct method invoker on converter
+			ConverterMethodInvoke = MethodInvocation.invoke( new MethodDescription.ForLoadedMethod( INTERNAL_CONVERTER_TYPE.getMethod(CONVERT_METHODNAME, Object.class) ) );
 		} catch (NoSuchMethodException | SecurityException e) {
+			// we are sure of their existence, since they are bundled
 		}
 	}
 	
@@ -170,8 +170,8 @@ public class GeneratorFactory {
 	
 	@SuppressWarnings("unchecked")
 	private static <S,T> Class<Convert<S,T>> build(Context<S,T> context) {
-		Builder<Convert<?,?>> builder = generateClassDefinition(context);
-		builder = builder.defineConstructor(Visibility.PUBLIC).intercept(SuperMethodCall.INSTANCE.andThen(new ConstructorBuilder()));
+		Builder<Convert<?,?>> builder = generateClassDefinition(context)
+					.defineConstructor( Visibility.PUBLIC ).intercept( SuperMethodCall.INSTANCE.andThen(ConstructorBuilder.INSTANCE) );
 		builder = generateInitCustomConverters(context, builder);
 		builder = generate2ArgsConvertMethod(context, builder);
 		builder = generateConvertMethod(builder);
@@ -194,7 +194,7 @@ public class GeneratorFactory {
 		@SuppressWarnings("unchecked")
 		Builder<Convert<?,?>> builder = (Builder<Convert<?,?>>)
 				new ByteBuddy()
-				.with(TypeNamingStrategy.INSTANCE)
+				.with(ClassGeneratorHelper.TypeNamingStrategy.INSTANCE)
 				.subclass(parameterizedType(parentClass, context.sourceType, context.targetType).build(), ConstructorStrategy.Default.NO_CONSTRUCTORS)
 				.defineMethod("toString", String.class, Visibility.PUBLIC)
 					.intercept(new Implementation.Simple(new TextConstant(format("converter %s to %s", context.sourceType, context.targetType)), MethodReturn.REFERENCE));
@@ -203,30 +203,45 @@ public class GeneratorFactory {
 
 
 	/**
-	 * Name the type, with a fixed package and classname that is a Base64 value of the given types.
-	 * @author shave
+	 * Generate a private field per custom converter and a method to initialize them.
+	 * This method is called by the constructor.
+	 * The <code>newInstance</code> is a dynamic call to retrieve the custom converter. 
+	 * <pre>
+	 * private Converter converter_0;
+	 * private Converter converter_1;
+	 * 
+	 * private void initCustomConverters(){
+	 *     converter_0 = newInstance([customconverter.class]);
+	 *     converter_1 = newInstance([anothercustomconverter.class]);
+	 * }
+	 * </pre>
+	 * @param cw
+	 * @param context
 	 */
-	private static class TypeNamingStrategy extends NamingStrategy.AbstractBase {
-		public static final TypeNamingStrategy INSTANCE = new TypeNamingStrategy();
-		private Encoder encoder = Base64.getEncoder();
-		
-		private TypeNamingStrategy(){}
-		
-		@Override
-		public String subclass(Generic superClass) {
-			String src = superClass.getTypeArguments().get(0).getTypeName() + " to " + superClass.getTypeArguments().get(1).getTypeName();
-			return DEFAULT_PACKAGE + ".gen_" + new String(encoder.encode(src.getBytes())).replace("=", "");
+	private static <T> Builder<T> generateInitCustomConverters(GeneratorFactory.Context<?,?> context, Builder<T> builder) {
+		List<Implementation> initConverters = new ArrayList<>();
+		int index = 0;
+
+		for (MappedProperties mappedProperties : Iterables.filter(context.classMap.getMappedProperties(), filterOnlyCustomConverters())) {
+			final Generic build = parameterizedType(INTERNAL_CONVERTER_TYPE, mappedProperties.getSourceType(), mappedProperties.getTargetType()).build();
+			final String fieldName = CONVERTER_FIELDNAME_PREFIX + (index++);
+			final FieldDescription.Token token = new FieldDescription.Token(fieldName, Opcodes.ACC_PRIVATE, build);
+			
+			LOG.debug("converter field {} = {}", fieldName, build);
+
+			builder = builder.defineField(token.getName(), token.getType(), token.getModifiers());
+			initConverters.add(new FieldInitializer(token, mappedProperties.getCustomConverter()));
+			context.customConverters.put(mappedProperties.getCustomConverter(), new Context.ConverterField(fieldName, token));
 		}
-		
-		@Override
-		protected String name(TypeDescription superClass) {
-			return DEFAULT_PACKAGE + ".gen_SourceType_to_TargetTypeConverter" + RandomString.make(10);
-		}
+
+		initConverters.add(new Implementation.Simple(MethodReturn.VOID));
+		builder = builder.defineMethod(INIT_CUSTOM_CONVERTERS_METHOD, Void.TYPE, Visibility.PRIVATE).intercept(new Implementation.Compound(initConverters));
+		return builder;
 	}
-	
+
 
 	/**
-	 * Generate the method <code>public void convert(source, target)</code>
+	 * Generate the method <code>public void convert(source, target){...}</code>
 	 * @param context
 	 * @param builder
 	 * @return
@@ -241,7 +256,7 @@ public class GeneratorFactory {
 
 
 	/**
-	 * Generate the method <code>public target convert(source)</code>
+	 * Generate the method <code>public target convert(source){... return target; }</code>
 	 * @param builder
 	 * @return
 	 */
@@ -288,44 +303,6 @@ public class GeneratorFactory {
 	
 
 	/**
-	 * Generate a private field per custom converter and a method to initialize them.
-	 * This method is called by the constructor.
-	 * The <code>newInstance</code> is a dynamic call to retrieve the custom converter. 
-	 * <pre>
-	 * private Converter converter_0;
-	 * private Converter converter_1;
-	 * 
-	 * private void initCustomConverters(){
-	 *     converter_0 = newInstance([customconverter.class]);
-	 *     converter_1 = newInstance([anothercustomconverter.class]);
-	 * }
-	 * </pre>
-	 * @param cw
-	 * @param context
-	 */
-	private static <T> Builder<T> generateInitCustomConverters(GeneratorFactory.Context<?,?> context, Builder<T> builder) {
-		List<Implementation> initConverters = new ArrayList<>();
-		int index = 0;
-
-		for (MappedProperties mappedProperties : Iterables.filter(context.classMap.getMappedProperties(), filterOnlyCustomConverters())) {
-			Generic build = parameterizedType(Converter.class, mappedProperties.getSourceProperty().getReadMethod().getGenericReturnType(), mappedProperties.getTargetProperty().getWriteMethod().getParameterTypes()[0]).build();
-			String fieldName = CONVERTER_FIELDNAME_PREFIX + (index++);
-			FieldDescription.Token token = new FieldDescription.Token(fieldName, Opcodes.ACC_PRIVATE, build);
-			
-			LOG.debug("converter field {} = {}", fieldName, build);
-
-			builder = builder.defineField(token.getName(), token.getType(), token.getModifiers());
-			initConverters.add(new FieldInitializer(token, mappedProperties.getCustomConverter()));
-			context.customConverters.put(mappedProperties.getCustomConverter(), new Context.ConverterField(fieldName, token));
-		}
-
-		initConverters.add(new Implementation.Simple(MethodReturn.VOID));
-		builder = builder.defineMethod(INIT_CUSTOM_CONVERTERS_METHOD, Void.TYPE, Visibility.PRIVATE).intercept(new Implementation.Compound(initConverters));
-		return builder;
-	}
-	
-
-	/**
 	 * Create the default constructor that calls the <code>initCustomConverters()</code> method.
 	 * <code>
 	 * public Classname(){
@@ -337,7 +314,9 @@ public class GeneratorFactory {
 	 * @param parentClass
 	 * @param context
 	 */
-	private static class ConstructorBuilder implements Implementation {
+	private static enum ConstructorBuilder implements Implementation {
+		INSTANCE;
+		
 		@Override
 		public InstrumentedType prepare(InstrumentedType instrumentedType) {
 			return instrumentedType;
@@ -355,14 +334,11 @@ public class GeneratorFactory {
 
 
 	/**
-	 * Generate the method <code>public target convert(source)</code>
+	 * Generate the method implementation for <code>public target convert(source)</code>
 	 * <code>
-	 * public T convert(S source){
-	 * 		if( source == null ) return null; 
 	 * 		T target = newInstance(T.class);
 	 *      this.convert(source, target);
 	 *      return target;
-	 * }
 	 * </code>
 	 */
 	private static class Converter1Builder implements ByteCodeAppender, Implementation {
@@ -379,24 +355,24 @@ public class GeneratorFactory {
 		@Override
 		public ByteCodeAppender.Size apply(MethodVisitor methodVisitor, Implementation.Context implementationContext, MethodDescription instrumentedMethod) {
 			final ParameterDescription parameterDescription = instrumentedMethod.getParameters().get(0);			
-			final int LOCAL_FIELD_OFFSET = parameterDescription.getOffset() +1;
 			final TypeDescription returnType = 
 					new TypeDescription.Latent(instrumentedMethod.getReturnType().getTypeName(), instrumentedMethod.getReturnType().getModifiers(), instrumentedMethod.getReturnType(), instrumentedMethod.getReturnType().getInterfaces());
-			MethodVariableAccess returnVar = MethodVariableAccess.of(returnType);
-			List<StackManipulation> insr = new ArrayList<>();
+			final MethodVariableAccess target_var = MethodVariableAccess.of(returnType);
+			final int local_field_offset = parameterDescription.getOffset() + 1;
+			final List<StackManipulation> insr = new ArrayList<>(8);
 			
-			// create new instance
-			insr.add(BeanCreationStrategyinvokeDynamic.dynamic("", returnType, Collections.<TypeDescription>emptyList(), emptyList()));
-			insr.add(returnVar.storeAt(LOCAL_FIELD_OFFSET));
+			// new instance
+			insr.add(BeanCreationStrategyinvokeDynamic.dynamic("new_instance", returnType, Collections.<TypeDescription>emptyList(), emptyList()));
+			insr.add(target_var.storeAt(local_field_offset));
 			
 			// this.convert(source, target)
 			insr.add(MethodVariableAccess.loadThis());
 			insr.add(MethodVariableAccess.load(parameterDescription));
-			insr.add(returnVar.loadFrom(LOCAL_FIELD_OFFSET));
-			insr.add(MethodInvocation.invoke(implementationContext.getInstrumentedType().getDeclaredMethods().filter( named(CONVERT_METHODNAME).and(takesArguments(2) )).getOnly()));
+			insr.add(target_var.loadFrom(local_field_offset));
+			insr.add(MethodInvocation.invoke( implementationContext.getInstrumentedType().getDeclaredMethods().filter( named(CONVERT_METHODNAME).and(takesArguments(2)) ).getOnly() ));
 			
 			// return target
-			insr.add(returnVar.loadFrom(LOCAL_FIELD_OFFSET));
+			insr.add(target_var.loadFrom(local_field_offset));
 			insr.add(MethodReturn.of(returnType));
 			
 			StackManipulation.Size size = new StackManipulation.Compound(insr).apply(methodVisitor, implementationContext);
@@ -462,11 +438,11 @@ public class GeneratorFactory {
 					final MethodDescription.ForLoadedMethod targetMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getTargetProperty().getWriteMethod());
 					final FieldDescription.Token field = context.customConverters.get(fieldMap.getCustomConverter()).field;
 					final Generic targetType = targetMethodDesc.getParameters().get(0).getType();
-					final TypeDescription wrapperType = ClassGeneratorHelper.getPrimitiveWrapperType(targetType);
+					final TypeDescription wrapperType = ClassGeneratorHelper.getPrimitiveWrapperType(targetType); // if target is primitive, use wrapper
+					final List<StackManipulation> insr = new ArrayList<>(9);
 					
 					LOG.debug("convert: read={} ,write={}, converter={} (primitive:{})", fieldMap.getSourceProperty().getReadMethod(), fieldMap.getTargetProperty().getWriteMethod(), fieldMap.getCustomConverter(), wrapperType!=null);
 					
-					List<StackManipulation> insr = new ArrayList<>(9);
 					insr.add(MethodVariableAccess.load(target));
 					insr.add(MethodVariableAccess.loadThis());
 					insr.add(FieldAccess.forField(new FieldDescription.Latent(implementationContext.getInstrumentedType().asErasure(), field)).read());
@@ -497,6 +473,7 @@ public class GeneratorFactory {
 			List<StackManipulation> insr = new ArrayList<>();
 			
 			LOG.debug("Mapping {} properties", this.context.classMap.getMappedProperties().size());
+
 			int incr = 0;
 			for(MappedProperties fieldMap : this.context.classMap.getMappedProperties()){
 				if( !fieldMap.hasCustomConverter() ) {

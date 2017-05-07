@@ -2,6 +2,7 @@ package org.spee.commons.convert.generator;
 
 import java.beans.BeanInfo;
 import java.beans.PropertyDescriptor;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -48,6 +49,14 @@ public class ClassMap {
 	public static class MappedProperties {
 		PropertyDescriptor sourceProperty, targetProperty;
 		Class<? extends Converter<?, ?>> customConverter;
+		
+		public Type getSourceType(){
+			return sourceProperty.getReadMethod().getGenericReturnType();
+		}
+		
+		public Type getTargetType(){
+			return targetProperty.getWriteMethod().getParameterTypes()[0];
+		}
 		
 		public PropertyDescriptor getSourceProperty() {
 			return sourceProperty;

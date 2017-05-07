@@ -7,19 +7,25 @@ import static net.bytebuddy.jar.asm.Opcodes.F_SAME;
 import static net.bytebuddy.jar.asm.Opcodes.IFNONNULL;
 import static net.bytebuddy.jar.asm.Opcodes.RETURN;
 
+import java.util.Base64;
+import java.util.Base64.Encoder;
+
 import org.spee.commons.convert.generator.ClassMap.MappedProperties;
 
 import com.google.common.base.Predicate;
 
+import net.bytebuddy.NamingStrategy;
 import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.dynamic.scaffold.InstrumentedType;
 import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.implementation.Implementation.Composable;
 import net.bytebuddy.implementation.bytecode.ByteCodeAppender;
 import net.bytebuddy.jar.asm.Label;
 import net.bytebuddy.jar.asm.MethodVisitor;
+import net.bytebuddy.utility.RandomString;
 
 final class ClassGeneratorHelper {
 
@@ -87,6 +93,7 @@ final class ClassGeneratorHelper {
 		
 		/**
 		 * if ( offset == null ){ return; }
+		 * if ( offset == null ){ return null; }
 		 */
 		@Override
 		public Size apply(MethodVisitor methodVisitor, Context implementationContext, MethodDescription instrumentedMethod) {
@@ -104,6 +111,32 @@ final class ClassGeneratorHelper {
 			return new Size(0, 0);
 		}
 		
+	}
+
+
+	/**
+	 * Name the type, with a fixed package and classname that is a Base64 value of the given types.
+	 * The Base64 is generated from: [source.class] to [target.class]
+	 * <br>
+	 * {@value GeneratorFactory#DEFAULT_PACKAGE}.gen_[SourceType to TargetType]
+	 * @author shave
+	 */
+	static class TypeNamingStrategy extends NamingStrategy.AbstractBase {
+		public static final TypeNamingStrategy INSTANCE = new TypeNamingStrategy();
+		private Encoder encoder = Base64.getEncoder();
+		
+		private TypeNamingStrategy(){}
+		
+		@Override
+		public String subclass(Generic superClass) {
+			String src = superClass.getTypeArguments().get(0).getTypeName() + " to " + superClass.getTypeArguments().get(1).getTypeName();
+			return GeneratorFactory.DEFAULT_PACKAGE + ".gen_" + new String(encoder.encode(src.getBytes())).replace("=", "");
+		}
+		
+		@Override
+		protected String name(TypeDescription superClass) {
+			return GeneratorFactory.DEFAULT_PACKAGE + ".gen_SourceType_to_TargetTypeConverter" + RandomString.make(10);
+		}
 	}
 
 
@@ -151,6 +184,5 @@ final class ClassGeneratorHelper {
 		}
 		return null;
 	}
-	
 	
 }

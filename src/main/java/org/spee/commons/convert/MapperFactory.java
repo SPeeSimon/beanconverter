@@ -91,7 +91,7 @@ public class MapperFactory {
 		final Predicate<Method> methodCheck = Predicates.and(isAnnotationPresentOnMethod(Converter.class), hasParameterCount(1));
 		for (Method method : container.getMethods()) {
 			if( methodCheck.apply(method) ){
-				logger.debug("Registering @Converter on method {} of {}", method, container);
+				logger.trace("Registering @Converter on method {} of {}", method, container);
 				try {
 					Class<?> sourceType = method.getParameterTypes()[0];
 					Class<?> targetType = method.getReturnType();

@@ -11,7 +11,6 @@ import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ElementVisitor;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.PackageElement;
@@ -19,6 +18,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.AbstractElementVisitor7;
 import javax.tools.Diagnostic.Kind;
 import javax.tools.JavaFileObject;
 
@@ -32,19 +32,10 @@ public class BeansAnnotationProcessor extends AbstractProcessor {
 			
 			String beanInfoName = element.getSimpleName() + "BeanInfo";
 			Map<Object, TypeMirror> properties = new HashMap<>();
-			
-			ElementVisitor<Object, Map<Object, TypeMirror>> visitor = new ElementVisitor<Object, Map<Object, TypeMirror>>() {
+			ElementVisitor<Object, Map<Object, TypeMirror>> visitor = new AbstractElementVisitor7<Object, Map<Object, TypeMirror>>() {
 				@Override
-				public Object visit(Element e, Map<Object, TypeMirror> p) {
+				public Object visitVariable(VariableElement e, Map<Object, TypeMirror> p) {
 					p.put(e.getSimpleName(), e.asType());
-					return null;
-				}
-
-				@Override
-				public Object visit(Element e) {
-					if( e.getKind() == ElementKind.FIELD ){
-						return e;
-					}
 					return null;
 				}
 
@@ -59,23 +50,12 @@ public class BeansAnnotationProcessor extends AbstractProcessor {
 				}
 
 				@Override
-				public Object visitVariable(VariableElement e, Map<Object, TypeMirror> p) {
-					p.put(e.getSimpleName(), e.asType());
-					return null;
-				}
-
-				@Override
 				public Object visitExecutable(ExecutableElement e, Map<Object, TypeMirror> p) {
 					return null;
 				}
 
 				@Override
 				public Object visitTypeParameter(TypeParameterElement e, Map<Object, TypeMirror> p) {
-					return null;
-				}
-
-				@Override
-				public Object visitUnknown(Element e, Map<Object, TypeMirror> p) {
 					return null;
 				}
 			};
@@ -99,7 +79,7 @@ public class BeansAnnotationProcessor extends AbstractProcessor {
 
 
 	private void writeClass(Element element, String beanInfoName, Map<Object, TypeMirror> properties) throws IOException {
-		JavaFileObject sourceFile = processingEnv.getFiler().createSourceFile(beanInfoName, element.getEnclosingElement());
+		JavaFileObject sourceFile = processingEnv.getFiler().createSourceFile(beanInfoName/*, element.getEnclosingElement()*/);
 
 		try(PrintWriter writer = new PrintWriter(sourceFile.openWriter())){
 			writer.printf("package %s;\n", processingEnv.getElementUtils().getPackageOf(element));
