@@ -70,6 +70,8 @@ public class MapperFactory {
 					.getLoaded();
 				TYPECACHE.insert(classLoader, key, converter);
 			}
+
+			TYPECACHE.expungeStaleEntries();
 			return (Convert<S,T>)converter.newInstance();
 		}
 		catch (NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException e) {
