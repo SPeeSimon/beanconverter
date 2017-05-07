@@ -24,38 +24,55 @@ import com.google.common.base.Predicates;
 import com.google.common.base.Supplier;
 
 import net.bytebuddy.ByteBuddy;
-import net.bytebuddy.dynamic.DynamicType.Unloaded;
+import net.bytebuddy.TypeCache;
+import net.bytebuddy.TypeCache.SimpleKey;
+import net.bytebuddy.TypeCache.Sort;
 import net.bytebuddy.implementation.InvokeDynamic;
 
 public class MapperFactory {
-    private static final Logger logger = LoggerFactory.getLogger(MapperFactory.class);
+    private static final Logger LOG = LoggerFactory.getLogger(MapperFactory.class);
+    @SuppressWarnings("rawtypes")
+    private static final Class<Convert> CONVERTER_TYPE = Convert.class;
+    private static final TypeCache<SimpleKey> TYPECACHE = new TypeCache<>(Sort.SOFT);
 	
     static{
     	register(DefaultConverters.class);
     	register(CollectionUtils.class);
     }
 
-    
+
+    /**
+     * Create the type converter and store in cache. 
+     * @param sourceType
+     * @param targetType
+     * @return
+     */
 	private static <S,T> Convert<S,T> createTypeConverter(Class<S> sourceType, Class<T> targetType) {
 		Preconditions.checkArgument(!sourceType.isPrimitive(), "Primitive type not supported: %s", sourceType);
 		Preconditions.checkArgument(!targetType.isPrimitive(), "Primitive type not supported: %s", targetType);
+		final ClassLoader classLoader = MapperFactory.class.getClassLoader();
+		final SimpleKey key = new SimpleKey(sourceType, targetType);
 		
-		@SuppressWarnings("rawtypes") final Class<Convert> converterType = Convert.class;
 		try {
-			@SuppressWarnings("unchecked")
-			Unloaded<Convert<S, T>> unloaded = (Unloaded<Convert<S, T>>)
-				new ByteBuddy()
-						.subclass(parameterizedType(converterType, sourceType, targetType).build())
-				.method( isDeclaredBy(converterType).and(named("convert")) )
-					.intercept(
+			Class<?> converter = TYPECACHE.find(classLoader, key);
+
+			if( converter == null ){
+				converter =
+					new ByteBuddy()
+							.subclass(parameterizedType(CONVERTER_TYPE, sourceType, targetType).build())
+					.method( isDeclaredBy(CONVERTER_TYPE).and(named("convert")) )
+						.intercept(
 							InvokeDynamic.bootstrap(MappingLocator.class.getDeclaredMethod("bootstrap", MethodHandles.Lookup.class, String.class, MethodType.class))
 								.withMethodArguments()
-					)
-				.make();
-		
-			Class<? extends Convert<S,T>> loaded2 = unloaded.load(MapperFactory.class.getClassLoader()).getLoaded();
-			return loaded2.newInstance();
-		} catch (NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException e) {
+						)
+					.make()
+					.load(classLoader)
+					.getLoaded();
+				TYPECACHE.insert(classLoader, key, converter);
+			}
+			return (Convert<S,T>)converter.newInstance();
+		}
+		catch (NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException e) {
 			throw new RuntimeException(e);
 		}
 	}    
@@ -91,7 +108,7 @@ public class MapperFactory {
 		final Predicate<Method> methodCheck = Predicates.and(isAnnotationPresentOnMethod(Converter.class), hasParameterCount(1));
 		for (Method method : container.getMethods()) {
 			if( methodCheck.apply(method) ){
-				logger.trace("Registering @Converter on method {} of {}", method, container);
+				LOG.trace("Registering @Converter on method {} of {}", method, container);
 				try {
 					Class<?> sourceType = method.getParameterTypes()[0];
 					Class<?> targetType = method.getReturnType();
