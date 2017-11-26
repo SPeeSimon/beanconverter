@@ -39,7 +39,7 @@ final class ClassGeneratorHelper {
 		private boolean returnNull;
 
 		/**
-		 * defaults: 1, true (first argument, returning null)
+		 * defaults: first argument, returning null
 		 * @see NullcheckAndReturnBuilder#NullcheckAndReturnBuilder(int, boolean)
 		 */
 		public NullcheckAndReturnBuilder() {
@@ -47,7 +47,7 @@ final class ClassGeneratorHelper {
 		}
 		
 		/**
-		 * defaults: true (returning null)
+		 * defaults: returning null
 		 * @see NullcheckAndReturnBuilder#NullcheckAndReturnBuilder(int, boolean)
 		 */
 		public NullcheckAndReturnBuilder(int offset) {
@@ -55,7 +55,7 @@ final class ClassGeneratorHelper {
 		}
 		
 		/**
-		 * defaults: 1 (first argument)
+		 * defaults: first argument
 		 * @see NullcheckAndReturnBuilder#NullcheckAndReturnBuilder(int, boolean)
 		 */
 		public NullcheckAndReturnBuilder(boolean returnNull) {
@@ -65,7 +65,7 @@ final class ClassGeneratorHelper {
 		/**
 		 * Check the value at the offset for null. If so, then return.
 		 * @param offset The offset to check for null. Given the method <code>public Object check(Object val1){}</code> 
-		 * offset 1 = this, 2 = val1.
+		 * offset 1 = this, offset 2 = val1.
 		 * @param returnNull true to return a null value, false for void.
 		 */
 		public NullcheckAndReturnBuilder(int offset, boolean returnNull) {

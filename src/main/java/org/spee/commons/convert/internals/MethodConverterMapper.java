@@ -36,7 +36,9 @@ import org.slf4j.LoggerFactory;
  */
 public class MethodConverterMapper implements InternalConverter {
 
-	private static final String TO = "to";
+	private static final String METHOD_TO_PREFIX = "to";
+	private static final String METHOD_ASTYPE_PREFIX = "asType";
+
 
 	private static ClassValue<Map<Class<?>, MethodHandle>> classWithMethods = new ClassValue<Map<Class<?>, MethodHandle>>() {
 
@@ -47,10 +49,10 @@ public class MethodConverterMapper implements InternalConverter {
 			for (Method method : type.getMethods()) {
 				if( isPublic(method.getModifiers()) && !isStatic(method.getModifiers()) && !(Void.TYPE == method.getReturnType()) && method.getParameterCount()==0 ) {
 					try {
-						if (method.getName().startsWith("asType")) { // groovy like
+						if (method.getName().startsWith(METHOD_ASTYPE_PREFIX)) { // groovy like
 							foundMethods.put(method.getReturnType(), lookup.unreflect(method));
 						}
-						else if( method.getName().startsWith(TO) && method.getName().equals(TO + method.getReturnType()) ){ // spring like
+						else if( method.getName().startsWith(METHOD_TO_PREFIX) && method.getName().equals(METHOD_TO_PREFIX + method.getReturnType()) ){ // spring like
 							foundMethods.put(method.getReturnType(), lookup.unreflect(method));
 						}
 					} catch (IllegalAccessException e) {

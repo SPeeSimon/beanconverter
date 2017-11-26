@@ -3,6 +3,7 @@ package org.spee.commons.utils;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 
+import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 
@@ -36,7 +37,39 @@ public class ReflectionUtils {
 			}
 		};
 	}
+
+
+	/**
+	 * Predicate that checks if a given type is available.
+	 * @param type The class name
+	 * @return {@link Optional} indicating the type is present or absent.
+	 */
+	public static Optional<Class> isTypePresent(final String type){
+		try {
+			Class class1 = Class.forName(type);
+			return Optional.of(class1);
+		} catch (ClassNotFoundException e) {
+			return Optional.absent();
+		}
+	}
 	
+	
+	/**
+	 * Retrieve the method from the methodHolder.
+	 * @param methodHolder The class which you want to look the method
+	 * @param methodName The name of the method
+	 * @param parameterTypes The parameter types of the method
+	 * @return {@link java.util.Optional} with the method present or absent in case of an exception.
+	 * @see Class#getMethod(String, Class...)
+	 */
+	public static Optional<Method> getMethod(Class<?> methodHolder, String methodName, Class<?>... parameterTypes){
+		try {
+			Method method = methodHolder.getMethod(methodName, parameterTypes);
+			return Optional.of( method );
+		} catch (NoSuchMethodException | SecurityException e) {
+			return Optional.absent();
+		}
+	}
 	
 	/**
 	 * Predicate that checks if a given method has the amount of parameters.
