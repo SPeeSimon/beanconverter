@@ -82,14 +82,11 @@ public class BeansAnnotationProcessor extends AbstractProcessor {
 		JavaFileObject sourceFile = processingEnv.getFiler().createSourceFile(beanInfoName/*, element.getEnclosingElement()*/);
 
 		try(PrintWriter writer = new PrintWriter(sourceFile.openWriter())){
-			writer.printf("package %s;\n", processingEnv.getElementUtils().getPackageOf(element));
-			writer.println();
-			writer.println("import org.spee.commons.beans.Property;");
-			writer.println("import org.spee.commons.beans.PropertyFactory;");
-			writer.println("import com.google.common.reflect.TypeToken;");
-			writer.println("import javax.annotation.Generated;");
-			writer.println();
-			writer.println("@Generated(\"org.spee.commons.beans.BeansAnnotationProcessor\")");
+			writer.printf("package %s;\n\n", processingEnv.getElementUtils().getPackageOf(element));
+			writer.println("import org.spee.commons.beans.Property;\n" +
+							"import org.spee.commons.beans.PropertyFactory;\n" +
+							"import com.google.common.reflect.TypeToken;\n\n" +
+							"@javax.annotation.Generated(\"org.spee.commons.beans.BeansAnnotationProcessor\")");
 			writer.printf("public class %s implements org.spee.commons.beans.Type<%s> {\n\n", beanInfoName, element.asType());
 
 			if( isGeneric(element.asType()) ){

@@ -17,6 +17,5 @@ public class ClassUtils {
 			return Optional.<Class<?>>absent();
 		}
 	}
-	
-	
+		
 }

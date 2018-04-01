@@ -3,6 +3,7 @@ package org.spee.commons.convert;
 import static org.junit.Assert.*;
 
 import org.junit.Test;
+import org.slf4j.LoggerFactory;
 
 public class MapperFactoryTest {
 
@@ -14,4 +15,14 @@ public class MapperFactoryTest {
 		
 	}
 
+	
+	public void convert(Object a, Object b) {
+		try {
+			b = a.toString();
+		}catch (Throwable e) {
+			LoggerFactory.getLogger("test").trace("error");
+			throw e;
+		}
+	}
+	
 }

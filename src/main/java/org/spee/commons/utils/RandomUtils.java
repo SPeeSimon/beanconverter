@@ -1,6 +1,9 @@
 package org.spee.commons.utils;
 
+import java.util.Collection;
 import java.util.Random;
+
+import com.google.common.collect.Iterables;
 
 public class RandomUtils {
 
@@ -18,6 +21,10 @@ public class RandomUtils {
 		Random r = new Random();
 		return array[r.nextInt(array.length)];
 	}
-	
+
+	public static <E> E random(Collection<E> list) {
+		int getIndex = new Random().nextInt(list.size());
+		return Iterables.get(list, getIndex);
+	}
 	
 }

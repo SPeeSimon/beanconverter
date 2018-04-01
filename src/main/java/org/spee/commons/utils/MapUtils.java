@@ -1,5 +1,6 @@
 package org.spee.commons.utils;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -62,6 +63,24 @@ public class MapUtils {
 		if( from != null && to != null && keyTransformer != null && valueTransformer != null ){ // TODO remove
 			for (Entry<A, B> entry : from.entrySet()) {
 				to.put(keyTransformer.apply(entry.getKey()), valueTransformer.apply(entry.getValue()));
+			}
+		}
+	}
+	
+	
+	public static <A,B,C,D> void transformInto(Map<A,B> from, Collection<C> to, Function<Map.Entry<A, B>, C> entryTransformer){
+		if( from != null && to != null && entryTransformer != null ){
+			for (Entry<A, B> entry : from.entrySet()) {
+				to.add(entryTransformer.apply(entry));
+			}
+		}
+	}
+	
+	
+	public static <A,B,C,D> void transformInto(Collection<A> from, Map<B,C> to, Function<A,B> keyTransformer, Function<A,C> valueTransformer){
+		if( from != null && to != null && keyTransformer != null && valueTransformer != null ){
+			for (A entry : from) {
+				to.put(keyTransformer.apply(entry), valueTransformer.apply(entry));
 			}
 		}
 	}

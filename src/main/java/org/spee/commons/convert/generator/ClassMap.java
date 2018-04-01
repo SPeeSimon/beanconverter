@@ -93,5 +93,13 @@ public class ClassMap {
 		public boolean hasCustomConverter(){
 			return customConverter != null;
 		}
+		
+		@Override
+		public String toString() {
+			return "MappedProperty{ source=" + sourceProperty
+					+ ", target=" + targetProperty
+					+ ", customconverter=" + customConverter
+					+ "}";
+		}
 	}
 }

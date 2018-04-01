@@ -1,5 +1,6 @@
 package org.spee.commons.convert.generator;
 
+import static java.util.Collections.emptyList;
 import static net.bytebuddy.jar.asm.Opcodes.ACONST_NULL;
 import static net.bytebuddy.jar.asm.Opcodes.ALOAD;
 import static net.bytebuddy.jar.asm.Opcodes.ARETURN;
@@ -7,8 +8,12 @@ import static net.bytebuddy.jar.asm.Opcodes.F_SAME;
 import static net.bytebuddy.jar.asm.Opcodes.IFNONNULL;
 import static net.bytebuddy.jar.asm.Opcodes.RETURN;
 
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Base64.Encoder;
+import java.util.Collections;
+import java.util.List;
 
 import org.spee.commons.convert.generator.ClassMap.MappedProperties;
 
@@ -16,6 +21,7 @@ import com.google.common.base.Predicate;
 
 import net.bytebuddy.NamingStrategy;
 import net.bytebuddy.description.method.MethodDescription;
+import net.bytebuddy.description.method.ParameterDescription;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.description.type.TypeDescription.Generic;
@@ -23,6 +29,9 @@ import net.bytebuddy.dynamic.scaffold.InstrumentedType;
 import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.implementation.Implementation.Composable;
 import net.bytebuddy.implementation.bytecode.ByteCodeAppender;
+import net.bytebuddy.implementation.bytecode.StackManipulation;
+import net.bytebuddy.implementation.bytecode.member.MethodInvocation;
+import net.bytebuddy.implementation.bytecode.member.MethodVariableAccess;
 import net.bytebuddy.jar.asm.Label;
 import net.bytebuddy.jar.asm.MethodVisitor;
 import net.bytebuddy.utility.RandomString;
@@ -113,6 +122,89 @@ final class ClassGeneratorHelper {
 		
 	}
 
+	
+	public static class ClearOrNewBuilder implements ByteCodeAppender, Composable {
+
+		private MappedProperties fieldMap;
+
+		public ClearOrNewBuilder(MappedProperties fieldMap) {
+			this.fieldMap = fieldMap;
+		}
+		
+		@Override
+		public InstrumentedType prepare(InstrumentedType instrumentedType) {
+			return instrumentedType;
+		}
+
+		@Override
+		public ByteCodeAppender appender(Target implementationTarget) {
+			return this;
+		}
+
+		/**
+		 * Return a new {@link Implementation} that is a compound of this and the given implementation.
+		 */
+		@Override
+		public Implementation andThen(Implementation implementation) {
+			return new Implementation.Compound(this, implementation);
+		}
+		
+		/**
+		 * public void convertField_0(S source, T target){
+		 * 		Iterable local;
+		 * 		if ( hasSetter() ){
+		 * 			local = new Iterable();
+		 * 			target.setProperty(local);
+		 * 		}
+		 * 		else {
+		 * 			local = getProperty();
+		 * 			local.clear();
+		 * 		}
+		 * 		...
+		 * }
+		 */
+		@Override
+		public Size apply(MethodVisitor methodVisitor, Context implementationContext, MethodDescription instrumentedMethod) {
+			
+			final TypeDescription returnType = new TypeDescription.ForLoadedType(fieldMap.getTargetProperty().getPropertyType());
+			final MethodVariableAccess localVar = MethodVariableAccess.of(returnType);
+			final List<StackManipulation> insr = new ArrayList<>(5);
+			final ParameterDescription parameterDescription = instrumentedMethod.getParameters().get(1);
+			final int local_field_offset = parameterDescription.getOffset() + 1;
+
+			if( fieldMap.getTargetProperty().getWriteMethod() != null ){
+				// target.setValue(new Collection());
+				final MethodDescription.ForLoadedMethod targetMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getTargetProperty().getWriteMethod());
+
+				// target_var = new instance
+				insr.add(GeneratorFactory.BeanCreationStrategyinvokeDynamic.dynamic("new_instance", returnType, Collections.<TypeDescription> emptyList(), emptyList()));
+				insr.add(localVar.storeAt(local_field_offset));
+
+				// target.setValue(target_var)
+				insr.add(MethodVariableAccess.load(parameterDescription));
+				insr.add(localVar.loadFrom(local_field_offset));
+				insr.add(MethodInvocation.invoke(targetMethodDesc));
+
+			}else{
+				final MethodDescription.ForLoadedMethod targetMethodDesc = new MethodDescription.ForLoadedMethod(fieldMap.getTargetProperty().getReadMethod());
+				final MethodDescription.Latent clearMethodDesc = new MethodDescription.Latent(returnType, new MethodDescription.Token("clear", Modifier.PUBLIC, TypeDescription.Generic.VOID));
+
+				// target_var = target.getValue();
+				insr.add(MethodVariableAccess.load(parameterDescription));
+				insr.add(MethodInvocation.invoke(targetMethodDesc));
+				insr.add(localVar.storeAt(local_field_offset));
+
+				// target_var.clear();
+				insr.add(localVar.loadFrom(local_field_offset));
+				insr.add(MethodInvocation.invoke(clearMethodDesc));
+			}
+			
+			StackManipulation.Size size = new StackManipulation.Compound(insr).apply(methodVisitor, implementationContext);
+			return new ByteCodeAppender.Size(size.getMaximalSize(), instrumentedMethod.getStackSize());
+		}
+
+		
+	}
 
 	/**
 	 * Name the type, with a fixed package and classname that is a Base64 value of the given types.

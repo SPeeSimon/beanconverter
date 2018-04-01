@@ -9,7 +9,5 @@ public class Property<C, T> {
 	public void set(C impl, T value){
 		
 	}
-	
-	
-	
+
 }
