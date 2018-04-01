@@ -22,8 +22,8 @@ import com.google.common.base.Supplier;
 /**
  * This class is where the matching of an Interface to an implementation is kept.
  * Default are the Collection interfaces mapped to a specific implementation of that interface.
- * So if you want to retrieve an implementation for {@link List} you need to call the {@link #getImplementationFor(Class)}
- * method with <code>List.class</code>.
+ * So if you want to retrieve an implementation for {@link List} you use:<br>
+ * {@code List impl = DefaultImplementations.getImplementationFor(List.class);}
  * 
  * @author shave
  *
